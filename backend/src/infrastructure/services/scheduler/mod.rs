@@ -22,7 +22,7 @@ pub fn start_scheduler(interval_secs: u64) {
 }
 
 async fn check_past_predictions() {
-    let prediction_repository = PredictionRepository::new();
+    let prediction_repository = PredictionRepository::new().await;
 
     let filter = crate::application::request_dto::filter_params_dto::FilterParams {
         symbol: None,

@@ -8,7 +8,7 @@ use crate::application::request_dto::history_params_dto::HistoryParams;
 pub async fn get_history_use_case(
     params: HistoryParams,
 ) -> Result<HistoryDto, DataError> {
-    let prediction_repository = PredictionRepository::new();
+    let prediction_repository = PredictionRepository::new().await;
     let result = prediction_repository.get_history(params).await;
 
     if result.is_err() {

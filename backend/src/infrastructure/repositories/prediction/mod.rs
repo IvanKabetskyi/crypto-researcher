@@ -1,6 +1,5 @@
 mod schema;
 
-use async_std::task;
 use futures::StreamExt;
 use mongodb::{
     bson::{doc, oid::ObjectId},
@@ -12,7 +11,7 @@ use std::collections::HashMap;
 
 use crate::domain::prediction::entities::Prediction;
 
-use crate::infrastructure::services::database::DB;
+use crate::infrastructure::services::database::get_db;
 
 use crate::application::error::DataError;
 use crate::application::request_dto::filter_params_dto::FilterParams;
@@ -40,8 +39,8 @@ pub struct PredictionRepository {
 }
 
 impl PredictionRepository {
-    pub fn new() -> Self {
-        let database = task::block_on(DB.lock());
+    pub async fn new() -> Self {
+        let database = get_db().await.lock().await;
 
         Self {
             collection: database.db.collection::<PredictionSchema>("predictions"),

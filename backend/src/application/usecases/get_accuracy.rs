@@ -6,7 +6,7 @@ use crate::application::dto::accuracy_dto::{AccuracyDto, SymbolAccuracy};
 use crate::application::error::DataError;
 
 pub async fn get_accuracy_use_case() -> Result<AccuracyDto, DataError> {
-    let prediction_repository = PredictionRepository::new();
+    let prediction_repository = PredictionRepository::new().await;
     let stats_response = prediction_repository.get_accuracy_stats().await;
 
     if stats_response.is_err() {
