@@ -53,21 +53,33 @@ jobs:
         run: npm run build
 
   deploy-backend:
-    name: Deploy Backend to Render
+    name: Deploy Backend to Koyeb
     needs: [check-backend]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Trigger Render Deploy
+      - name: Install Koyeb CLI
+        run: curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+
+      - name: Trigger Koyeb Redeploy
+        env:
+          KOYEB_TOKEN: ${{ secrets.KOYEB_API_TOKEN }}
         run: |
-          curl -s "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}" || echo "Set RENDER_BACKEND_DEPLOY_HOOK secret"
+          export PATH="$HOME/.koyeb/bin:$PATH"
+          koyeb service redeploy crypto-researcher-backend/crypto-researcher-backend
 
   deploy-frontend:
-    name: Deploy Frontend to Render
+    name: Deploy Frontend to Koyeb
     needs: [check-frontend]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Trigger Render Deploy
+      - name: Install Koyeb CLI
+        run: curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+
+      - name: Trigger Koyeb Redeploy
+        env:
+          KOYEB_TOKEN: ${{ secrets.KOYEB_API_TOKEN }}
         run: |
-          curl -s "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}" || echo "Set RENDER_FRONTEND_DEPLOY_HOOK secret"
+          export PATH="$HOME/.koyeb/bin:$PATH"
+          koyeb service redeploy crypto-researcher-frontend/crypto-researcher-frontend
