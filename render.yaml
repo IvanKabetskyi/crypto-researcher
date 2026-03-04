@@ -30,7 +30,7 @@ services:
   - type: web
     name: crypto-researcher-frontend
     runtime: static
-    buildCommand: cd frontend && npm ci && npm run build && sed -i "s|__API_URL__|${VITE_API_URL}|g" dist/config.js
+    buildCommand: cd frontend && npm ci && npm run build
     staticPublishPath: ./frontend/dist
     headers:
       - path: /*

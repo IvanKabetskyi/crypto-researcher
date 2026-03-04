@@ -4,6 +4,17 @@ import path from 'path';
 
 export default defineConfig({
     plugins: [react()],
+    define: {
+        __API_URL__: JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8080/api'),
+    },
+    server: {
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8080',
+                changeOrigin: true,
+            },
+        },
+    },
     resolve: {
         alias: {
             components: path.resolve(__dirname, './src/components'),
