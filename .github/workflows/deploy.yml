@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   check-backend:
     name: Check Backend (Rust)
@@ -50,7 +55,18 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Build
-        run: npm run build
+        env:
+          VITE_API_URL: https://crypto-be-ikabetskyi-eb70108a.koyeb.app/api
+          GITHUB_PAGES: true
+        run: |
+          npm run build
+          cp dist/index.html dist/404.html
+
+      - name: Upload artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
 
   deploy-backend:
     name: Deploy Backend to Koyeb
@@ -66,20 +82,17 @@ jobs:
           KOYEB_TOKEN: ${{ secrets.KOYEB_API_TOKEN }}
         run: |
           export PATH="$HOME/.koyeb/bin:$PATH"
-          koyeb service redeploy crypto-researcher-backend/crypto-researcher-backend
+          koyeb service redeploy crypto-be/backend
 
   deploy-frontend:
-    name: Deploy Frontend to Koyeb
+    name: Deploy Frontend to GitHub Pages
     needs: [check-frontend]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Install Koyeb CLI
-        run: curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-
-      - name: Trigger Koyeb Redeploy
-        env:
-          KOYEB_TOKEN: ${{ secrets.KOYEB_API_TOKEN }}
-        run: |
-          export PATH="$HOME/.koyeb/bin:$PATH"
-          koyeb service redeploy crypto-researcher-frontend/crypto-researcher-frontend
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

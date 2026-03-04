@@ -13,7 +13,7 @@ function App() {
             <PersistGate loading={null} persistor={persistor}>
                 <ThemeProvider theme={theme}>
                     <CssBaseline />
-                    <BrowserRouter>
+                    <BrowserRouter basename={import.meta.env.BASE_URL}>
                         <Box
                             sx={{
                                 minHeight: '100vh',

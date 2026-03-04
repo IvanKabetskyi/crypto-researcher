@@ -4,6 +4,7 @@ import path from 'path';
 
 export default defineConfig({
     plugins: [react()],
+    base: process.env.GITHUB_PAGES ? '/crypto-researcher/' : '/',
     define: {
         __API_URL__: JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8080/api'),
     },
