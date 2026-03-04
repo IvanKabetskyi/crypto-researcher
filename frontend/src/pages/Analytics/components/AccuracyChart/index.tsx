@@ -41,8 +41,8 @@ export const AccuracyChart: React.FC<AccuracyChartProps> = ({ bySymbol }) => {
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: 8,
                             }}
-                            formatter={(value: number, name: string) => [
-                                `${value.toFixed(1)}%`,
+                            formatter={(value: number | undefined, name: string) => [
+                                value != null ? `${value.toFixed(1)}%` : '—',
                                 name === 'accuracy' ? 'Accuracy' : name,
                             ]}
                         />

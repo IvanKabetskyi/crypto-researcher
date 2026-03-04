@@ -42,14 +42,14 @@ export const Analytics: React.FC = () => {
             {accuracy ? (
                 <>
                     <Grid container spacing={2} mb={3}>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                             <StatsCard
                                 label="Total Predictions"
                                 value={accuracy.totalPredictions}
                                 subtitle="All time"
                             />
                         </Grid>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                             <StatsCard
                                 label="Accuracy"
                                 value={`${accuracy.accuracyPercentage.toFixed(1)}%`}
@@ -63,14 +63,14 @@ export const Analytics: React.FC = () => {
                                 subtitle={`${accuracy.correct} correct / ${accuracy.incorrect} incorrect`}
                             />
                         </Grid>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                             <StatsCard
                                 label="Correct"
                                 value={accuracy.correct}
                                 color="#00e676"
                             />
                         </Grid>
-                        <Grid item xs={6} md={3}>
+                        <Grid size={{ xs: 6, md: 3 }}>
                             <StatsCard
                                 label="Pending"
                                 value={accuracy.pending}

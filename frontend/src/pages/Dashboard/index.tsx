@@ -112,7 +112,7 @@ export const Dashboard = () => {
             ) : (
                 <Grid container spacing={2}>
                     {predictions.map((prediction) => (
-                        <Grid item xs={12} sm={6} md={4} key={prediction.id}>
+                        <Grid size={{ xs: 12, sm: 6, md: 4 }} key={prediction.id}>
                             <PredictionCard prediction={prediction} />
                         </Grid>
                     ))}
