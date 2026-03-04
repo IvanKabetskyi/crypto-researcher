@@ -14,7 +14,6 @@ interface PredictionApiResponse {
     stop_loss: number;
     created_at: string;
     outcome: string | null;
-    actual_price_after: number | null;
 }
 
 interface MarketApiResponse {
@@ -22,8 +21,6 @@ interface MarketApiResponse {
     price: number;
     change_24h: number;
     volume_24h: number;
-    high_price_24h: number;
-    low_price_24h: number;
 }
 
 interface AccuracyApiResponse {
@@ -32,7 +29,16 @@ interface AccuracyApiResponse {
     incorrect: number;
     pending: number;
     accuracy_percentage: number;
-    by_symbol: Record<string, { total: number; correct: number; accuracy: number }>;
+    by_symbol: Record<
+        string,
+        {
+            total: number;
+            correct: number;
+            incorrect: number;
+            pending: number;
+            accuracy_percentage: number;
+        }
+    >;
 }
 
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
@@ -45,8 +51,7 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     targetPrice: data.target_price,
     stopLoss: data.stop_loss,
     createdAt: data.created_at,
-    outcome: data.outcome as Prediction['outcome'],
-    actualPriceAfter: data.actual_price_after,
+    outcome: data.outcome,
 });
 
 export const transformMarketResponse = (data: MarketApiResponse): MarketData => ({
@@ -54,8 +59,6 @@ export const transformMarketResponse = (data: MarketApiResponse): MarketData => 
     price: data.price,
     change24h: data.change_24h,
     volume24h: data.volume_24h,
-    highPrice24h: data.high_price_24h,
-    lowPrice24h: data.low_price_24h,
 });
 
 export const transformAccuracyResponse = (data: AccuracyApiResponse): AccuracyStats => ({
@@ -64,7 +67,18 @@ export const transformAccuracyResponse = (data: AccuracyApiResponse): AccuracySt
     incorrect: data.incorrect,
     pending: data.pending,
     accuracyPercentage: data.accuracy_percentage,
-    bySymbol: data.by_symbol,
+    bySymbol: Object.fromEntries(
+        Object.entries(data.by_symbol).map(([symbol, stats]) => [
+            symbol,
+            {
+                total: stats.total,
+                correct: stats.correct,
+                incorrect: stats.incorrect,
+                pending: stats.pending,
+                accuracy: stats.accuracy_percentage,
+            },
+        ]),
+    ),
 });
 
 interface HistoryApiResponse {

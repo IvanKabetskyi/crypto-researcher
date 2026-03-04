@@ -8,6 +8,5 @@ export interface Prediction {
     targetPrice: number;
     stopLoss: number;
     createdAt: string;
-    outcome: 'correct' | 'incorrect' | 'pending' | null;
-    actualPriceAfter: number | null;
+    outcome: string | null;
 }

@@ -3,6 +3,4 @@ export interface MarketData {
     price: number;
     change24h: number;
     volume24h: number;
-    highPrice24h: number;
-    lowPrice24h: number;
 }

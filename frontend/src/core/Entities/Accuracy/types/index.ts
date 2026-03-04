@@ -1,6 +1,8 @@
 export interface SymbolAccuracy {
     total: number;
     correct: number;
+    incorrect: number;
+    pending: number;
     accuracy: number;
 }
 
