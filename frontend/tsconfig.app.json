@@ -1,0 +1,39 @@
+{
+    "compilerOptions": {
+        "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+        "target": "ES2022",
+        "useDefineForClassFields": true,
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "module": "ESNext",
+        "types": ["vite/client", "node"],
+        "skipLibCheck": true,
+        "baseUrl": "src",
+        "paths": {
+            "components/*": ["components/*"],
+            "pages/*": ["pages/*"],
+            "store": ["store"],
+            "store/*": ["store/*"],
+            "core/*": ["core/*"],
+            "services/*": ["services/*"],
+            "hooks/*": ["hooks/*"],
+            "config/*": ["config/*"],
+            "constants/*": ["constants/*"],
+            "types/*": ["types/*"],
+            "utils/*": ["utils/*"],
+            "widgets/*": ["widgets/*"],
+            "router/*": ["router/*"]
+        },
+
+        "moduleResolution": "bundler",
+        "allowImportingTsExtensions": true,
+        "moduleDetection": "force",
+        "noEmit": true,
+        "jsx": "react-jsx",
+
+        "strict": true,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "noFallthroughCasesInSwitch": true
+    },
+    "include": ["src"]
+}

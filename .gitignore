@@ -1,0 +1,22 @@
+.DS_Store
+*.local
+
+# Backend
+backend/target/
+backend/.env
+backend/**/*.rs.bk
+backend/*.pdb
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.log
+
+# IDE
+.vscode/
+.idea/
+*.sw?
+
+# Claude
+.claude/

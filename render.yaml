@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: crypto-researcher-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: SERVER_HOST
+        value: 0.0.0.0
+      - key: SERVER_PORT
+        value: 8080
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: crypto_researcher
+      - key: AI_API_URL
+        value: https://api.groq.com/openai/v1
+      - key: AI_MODEL
+        value: llama-3.3-70b-versatile
+      - key: AI_API_KEY
+        sync: false
+      - key: WATCH_PAIRS
+        value: BTCUSDT,ETHUSDT
+      - key: ANALYSIS_INTERVAL_SECS
+        value: 600
+      - key: BYBIT_API_URL
+        value: https://api.bybit.com
+
+  - type: web
+    name: crypto-researcher-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    plan: free
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false
