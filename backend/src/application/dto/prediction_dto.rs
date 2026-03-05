@@ -14,6 +14,7 @@ pub struct PredictionDto {
     stop_loss: f64,
     created_at: String,
     outcome: Option<String>,
+    timeframe: Option<String>,
 }
 
 impl PredictionDto {
@@ -29,6 +30,7 @@ impl PredictionDto {
             stop_loss: prediction.get_stop_loss(),
             created_at: prediction.get_created_at().to_rfc3339(),
             outcome: prediction.get_outcome(),
+            timeframe: prediction.get_timeframe(),
         }
     }
 }

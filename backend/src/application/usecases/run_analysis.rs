@@ -1,3 +1,4 @@
+use crate::application::request_dto::analyze_params_dto::AnalyzeParams;
 use crate::domain::market::entities::MarketSnapshot;
 use crate::domain::prediction::services::AnalysisService;
 use crate::infrastructure::repositories::prediction::PredictionRepository;
@@ -5,11 +6,24 @@ use crate::infrastructure::services::bybit::BybitService;
 use crate::infrastructure::services::news::CryptoRssService;
 use crate::infrastructure::services::openrouter::AIService;
 
-pub async fn run_analysis_use_case() {
-    let pairs = std::env::var("WATCH_PAIRS").unwrap_or_else(|_| "BTCUSDT,ETHUSDT".into());
-    let symbols: Vec<String> = pairs.split(',').map(|s| s.trim().to_string()).collect();
+fn map_timeframe_to_interval(timeframe: &str) -> &str {
+    match timeframe {
+        "30min" => "30",
+        "1h" => "60",
+        "6h" => "360",
+        "12h" => "720",
+        "24h" => "D",
+        _ => "60",
+    }
+}
 
-    tracing::info!("Starting analysis for pairs: {:?}", symbols);
+pub async fn run_analysis_use_case(params: AnalyzeParams) {
+    let symbols = params.pairs;
+    let timeframe = &params.timeframe;
+    let min_confidence = params.min_confidence;
+    let kline_interval = map_timeframe_to_interval(timeframe);
+
+    tracing::info!("Starting analysis for pairs: {:?}, timeframe: {}", symbols, timeframe);
 
     let bybit_service = BybitService::new();
     let news_service = CryptoRssService::new();
@@ -35,7 +49,7 @@ pub async fn run_analysis_use_case() {
     // Fetch klines
     let mut klines = std::collections::HashMap::new();
     for symbol in &symbols {
-        match bybit_service.fetch_klines(symbol, "60", 3).await {
+        match bybit_service.fetch_klines(symbol, kline_interval, 3).await {
             Ok(symbol_klines) => {
                 tracing::info!("Fetched {} klines for {}", symbol_klines.len(), symbol);
                 klines.insert(symbol.clone(), symbol_klines);
@@ -62,13 +76,13 @@ pub async fn run_analysis_use_case() {
     let snapshot = MarketSnapshot::new(tickers, klines, news);
 
     // Call AI for analysis
-    let raw_predictions = match ollama_service.analyze(&snapshot).await {
+    let raw_predictions = match ollama_service.analyze(&snapshot, timeframe).await {
         Ok(preds) => {
-            tracing::info!("Ollama returned {} predictions", preds.len());
+            tracing::info!("AI returned {} predictions", preds.len());
             preds
         }
         Err(e) => {
-            tracing::error!("Ollama analysis failed: {}", e);
+            tracing::error!("AI analysis failed: {}", e);
             return;
         }
     };
@@ -78,10 +92,11 @@ pub async fn run_analysis_use_case() {
         return;
     }
 
-    // Filter by confidence - use wider range to actually get results
-    let filtered = AnalysisService::filter_by_confidence(&raw_predictions, 70.0, 100.0);
+    // Filter by confidence
+    let filtered = AnalysisService::filter_by_confidence(&raw_predictions, min_confidence, 100.0);
     tracing::info!(
-        "After confidence filter: {} of {} predictions kept",
+        "After confidence filter (>= {}): {} of {} predictions kept",
+        min_confidence,
         filtered.len(),
         raw_predictions.len()
     );
@@ -109,4 +124,3 @@ pub async fn run_analysis_use_case() {
         }
     }
 }
-

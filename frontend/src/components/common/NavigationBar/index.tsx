@@ -1,7 +1,6 @@
 import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import HistoryIcon from '@mui/icons-material/History';
-import SettingsIcon from '@mui/icons-material/Settings';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export const NavigationBar = () => {
@@ -27,16 +26,10 @@ export const NavigationBar = () => {
                     <Button
                         color={location.pathname === '/' ? 'primary' : 'inherit'}
                         onClick={() => navigate('/')}
+                        startIcon={<ShowChartIcon />}
                         sx={{ fontWeight: location.pathname === '/' ? 700 : 400 }}
                     >
-                        Dashboard
-                    </Button>
-                    <Button
-                        color={location.pathname === '/analytics' ? 'primary' : 'inherit'}
-                        onClick={() => navigate('/analytics')}
-                        sx={{ fontWeight: location.pathname === '/analytics' ? 700 : 400 }}
-                    >
-                        Analytics
+                        Signals
                     </Button>
                     <Button
                         color={location.pathname === '/history' ? 'primary' : 'inherit'}
@@ -47,15 +40,6 @@ export const NavigationBar = () => {
                         History
                     </Button>
                 </Box>
-
-                <Button
-                    color={location.pathname === '/settings' ? 'primary' : 'inherit'}
-                    onClick={() => navigate('/settings')}
-                    startIcon={<SettingsIcon />}
-                    sx={{ fontWeight: location.pathname === '/settings' ? 700 : 400 }}
-                >
-                    Settings
-                </Button>
             </Toolbar>
         </AppBar>
     );

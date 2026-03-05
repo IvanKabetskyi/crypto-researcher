@@ -17,4 +17,5 @@ pub struct PredictionSchema {
     pub created_at: DateTime<Utc>,
     pub outcome: Option<String>,
     pub actual_price_after: Option<f64>,
+    pub timeframe: Option<String>,
 }

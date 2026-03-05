@@ -63,6 +63,12 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                     <ConfidenceBadge confidence={prediction.confidence} />
                 </Box>
 
+                {prediction.timeframe && (
+                    <Box mb={1}>
+                        <Chip label={prediction.timeframe} size="small" variant="outlined" />
+                    </Box>
+                )}
+
                 <Box display="flex" gap={2} mb={1.5}>
                     <Box>
                         <Typography variant="caption" color="text.secondary">

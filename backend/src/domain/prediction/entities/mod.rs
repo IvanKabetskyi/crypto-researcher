@@ -13,6 +13,7 @@ pub struct Prediction {
     created_at: DateTime<Utc>,
     outcome: Option<String>,
     actual_price_after: Option<f64>,
+    timeframe: Option<String>,
 }
 
 impl Prediction {
@@ -28,6 +29,7 @@ impl Prediction {
         created_at: Option<DateTime<Utc>>,
         outcome: Option<String>,
         actual_price_after: Option<f64>,
+        timeframe: Option<String>,
     ) -> Self {
         Self {
             id: id.unwrap_or(ObjectId::new()),
@@ -41,6 +43,7 @@ impl Prediction {
             created_at: created_at.unwrap_or(Utc::now()),
             outcome,
             actual_price_after,
+            timeframe,
         }
     }
 
@@ -86,6 +89,10 @@ impl Prediction {
 
     pub fn get_actual_price_after(&self) -> Option<f64> {
         self.actual_price_after
+    }
+
+    pub fn get_timeframe(&self) -> Option<String> {
+        self.timeframe.clone()
     }
 
     pub fn update_outcome(&mut self, outcome: String) {

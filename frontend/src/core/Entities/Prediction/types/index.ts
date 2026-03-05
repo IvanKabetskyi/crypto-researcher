@@ -9,4 +9,5 @@ export interface Prediction {
     stopLoss: number;
     createdAt: string;
     outcome: string | null;
+    timeframe?: string;
 }

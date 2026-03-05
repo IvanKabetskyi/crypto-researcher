@@ -60,6 +60,7 @@ impl PredictionRepository {
             created_at: prediction.get_created_at(),
             outcome: prediction.get_outcome(),
             actual_price_after: prediction.get_actual_price_after(),
+            timeframe: prediction.get_timeframe(),
         };
 
         let result = self.collection.insert_one(document, None).await;
@@ -99,6 +100,7 @@ impl PredictionRepository {
             Some(s.created_at),
             s.outcome,
             s.actual_price_after,
+            s.timeframe,
         ))
     }
 
@@ -154,6 +156,7 @@ impl PredictionRepository {
                     Some(s.created_at),
                     s.outcome,
                     s.actual_price_after,
+                    s.timeframe,
                 ));
             }
         }
@@ -314,6 +317,7 @@ impl PredictionRepository {
                     Some(s.created_at),
                     s.outcome,
                     s.actual_price_after,
+                    s.timeframe,
                 ));
             }
         }

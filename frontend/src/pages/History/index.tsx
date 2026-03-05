@@ -197,6 +197,7 @@ export const History: React.FC = () => {
                                 <TableRow>
                                     <TableCell>Symbol</TableCell>
                                     <TableCell>Direction</TableCell>
+                                    <TableCell>Timeframe</TableCell>
                                     <TableCell>Confidence</TableCell>
                                     <TableCell>Entry</TableCell>
                                     <TableCell>Target</TableCell>
@@ -220,6 +221,7 @@ export const History: React.FC = () => {
                                                 variant="outlined"
                                             />
                                         </TableCell>
+                                        <TableCell>{p.timeframe || '-'}</TableCell>
                                         <TableCell>{p.confidence.toFixed(1)}%</TableCell>
                                         <TableCell>${formatPrice(p.entryPrice)}</TableCell>
                                         <TableCell>${formatPrice(p.targetPrice)}</TableCell>

@@ -18,14 +18,15 @@ impl AnalysisService {
         tickers_json: &str,
         klines_json: &str,
         news_json: &str,
+        timeframe: &str,
     ) -> String {
         format!(
-            "Analyze this crypto data and give predictions.\n\
+            "Analyze this crypto data and give predictions for timeframe: {}.\n\
             Tickers: {}\n\
-            Candles (1h): {}\n\
+            Candles: {}\n\
             News: {}\n\
             Return JSON: {{\"predictions\":[{{\"symbol\":\"BTCUSDT\",\"direction\":\"long\",\"confidence\":75,\"reasoning\":\"brief\",\"entry_price\":100000,\"target_price\":101000,\"stop_loss\":99000}}]}}",
-            tickers_json, klines_json, news_json
+            timeframe, tickers_json, klines_json, news_json
         )
     }
 

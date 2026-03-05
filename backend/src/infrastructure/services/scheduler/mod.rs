@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::application::request_dto::analyze_params_dto::AnalyzeParams;
 use crate::application::usecases::run_analysis::run_analysis_use_case;
 use crate::domain::prediction::services::AnalysisService;
 use crate::infrastructure::repositories::prediction::PredictionRepository;
@@ -14,7 +15,14 @@ pub fn start_scheduler(interval_secs: u64) {
 
             tracing::info!("Running scheduled analysis cycle");
 
-            run_analysis_use_case().await;
+            let pairs = std::env::var("WATCH_PAIRS").unwrap_or_else(|_| "BTCUSDT,ETHUSDT".into());
+            let symbols: Vec<String> = pairs.split(',').map(|s| s.trim().to_string()).collect();
+            let params = AnalyzeParams {
+                pairs: symbols,
+                timeframe: "1h".to_string(),
+                min_confidence: 70.0,
+            };
+            run_analysis_use_case(params).await;
 
             check_past_predictions().await;
         }

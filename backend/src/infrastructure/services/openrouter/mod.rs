@@ -83,6 +83,7 @@ impl AIService {
     pub async fn analyze(
         &self,
         snapshot: &MarketSnapshot,
+        timeframe: &str,
     ) -> Result<Vec<Prediction>, Box<dyn std::error::Error + Send + Sync>> {
         if self.api_key.is_empty() {
             return Err("AI_API_KEY not set. Get a free key at https://console.groq.com".into());
@@ -93,12 +94,14 @@ impl AIService {
         let news_json = snapshot.news_to_json();
 
         let user_content =
-            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json);
+            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, timeframe);
 
-        let system_content = String::from(
+        let system_content = format!(
             "You are a professional cryptocurrency trading analyst. \
             You analyze market data, price action, volume, and news sentiment to provide \
             trading predictions with confidence scores. \
+            The prediction horizon/timeframe is: {}. \
+            Set target_price and stop_loss appropriate for this timeframe. \
             You MUST respond ONLY with valid JSON - no markdown, no code fences, no extra text. \
             Your response must be a JSON object with a \"predictions\" array. \
             Each prediction object must have these exact keys: \
@@ -111,6 +114,7 @@ impl AIService {
             \"stop_loss\" (number). \
             Always provide at least one prediction for each symbol in the data. \
             Be realistic with confidence scores - use 70-90 range for strong signals.",
+            timeframe,
         );
 
         let request_body = ChatRequest {
@@ -216,6 +220,7 @@ impl AIService {
                     None,
                     None,
                     None,
+                    Some(timeframe.to_string()),
                 ))
             })
             .collect();

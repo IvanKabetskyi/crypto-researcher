@@ -47,8 +47,12 @@ export const predictionRequests = {
         return response.data.map(transformMarketResponse);
     },
 
-    triggerAnalysis: async (): Promise<{ success: boolean; message: string }> => {
-        const response = await apiClient.post('/analyze', null, { timeout: 300000 });
+    triggerAnalysis: async (params: {
+        pairs: string[];
+        timeframe: string;
+        min_confidence: number;
+    }): Promise<{ success: boolean; message: string }> => {
+        const response = await apiClient.post('/analyze', params, { timeout: 300000 });
         return response.data;
     },
 

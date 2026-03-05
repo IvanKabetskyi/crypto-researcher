@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::application::dto::accuracy_dto::AccuracyDto;
 use crate::application::dto::market_dto::MarketDto;
 use crate::application::dto::prediction_dto::PredictionDto;
-use crate::application::error::DataError;
+use crate::application::request_dto::analyze_params_dto::AnalyzeParams;
 use crate::application::request_dto::filter_params_dto::FilterParams;
 
 use crate::application::usecases::get_accuracy::get_accuracy_use_case;
@@ -56,9 +56,10 @@ struct AnalyzeResponse {
 }
 
 #[post("/api/analyze")]
-pub async fn trigger_analysis() -> HttpResponse {
-    tracing::info!("Manual analysis triggered from frontend");
-    run_analysis_use_case().await;
+pub async fn trigger_analysis(body: Json<AnalyzeParams>) -> HttpResponse {
+    let params = body.into_inner();
+    tracing::info!("Manual analysis triggered from frontend: pairs={:?}, timeframe={}", params.pairs, params.timeframe);
+    run_analysis_use_case(params).await;
     HttpResponse::Ok().json(AnalyzeResponse {
         success: true,
         message: "Analysis cycle completed".into(),

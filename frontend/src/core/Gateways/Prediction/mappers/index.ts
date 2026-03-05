@@ -14,6 +14,7 @@ interface PredictionApiResponse {
     stop_loss: number;
     created_at: string;
     outcome: string | null;
+    timeframe?: string;
 }
 
 interface MarketApiResponse {
@@ -52,6 +53,7 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     stopLoss: data.stop_loss,
     createdAt: data.created_at,
     outcome: data.outcome,
+    timeframe: data.timeframe,
 });
 
 export const transformMarketResponse = (data: MarketApiResponse): MarketData => ({
