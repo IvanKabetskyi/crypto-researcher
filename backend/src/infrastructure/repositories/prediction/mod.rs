@@ -7,8 +7,6 @@ use mongodb::{
     Collection,
 };
 
-use std::collections::HashMap;
-
 use crate::domain::prediction::entities::Prediction;
 
 use crate::infrastructure::services::database::get_db;
@@ -18,21 +16,6 @@ use crate::application::request_dto::filter_params_dto::FilterParams;
 use crate::application::request_dto::history_params_dto::HistoryParams;
 
 pub use schema::PredictionSchema;
-
-pub struct AccuracyStats {
-    pub total: i64,
-    pub correct: i64,
-    pub incorrect: i64,
-    pub pending: i64,
-    pub by_symbol: HashMap<String, SymbolStats>,
-}
-
-pub struct SymbolStats {
-    pub total: i64,
-    pub correct: i64,
-    pub incorrect: i64,
-    pub pending: i64,
-}
 
 pub struct PredictionRepository {
     collection: Collection<PredictionSchema>,
@@ -183,59 +166,6 @@ impl PredictionRepository {
         }
 
         Ok(())
-    }
-
-    pub async fn get_accuracy_stats(&self) -> Result<AccuracyStats, DataError> {
-        let all_cursor = self.collection.find(None, None).await;
-
-        if all_cursor.is_err() {
-            return Err(DataError::new("failed to query predictions for accuracy"));
-        }
-
-        let mut cursor = all_cursor.unwrap();
-
-        let mut total: i64 = 0;
-        let mut correct: i64 = 0;
-        let mut incorrect: i64 = 0;
-        let mut pending: i64 = 0;
-        let mut by_symbol: HashMap<String, SymbolStats> = HashMap::new();
-
-        while let Some(result) = cursor.next().await {
-            if let Ok(s) = result {
-                total += 1;
-
-                let outcome = s.outcome.as_deref().unwrap_or("pending");
-
-                match outcome {
-                    "correct" => correct += 1,
-                    "incorrect" => incorrect += 1,
-                    _ => pending += 1,
-                }
-
-                let entry = by_symbol.entry(s.symbol.clone()).or_insert(SymbolStats {
-                    total: 0,
-                    correct: 0,
-                    incorrect: 0,
-                    pending: 0,
-                });
-
-                entry.total += 1;
-
-                match outcome {
-                    "correct" => entry.correct += 1,
-                    "incorrect" => entry.incorrect += 1,
-                    _ => entry.pending += 1,
-                }
-            }
-        }
-
-        Ok(AccuracyStats {
-            total,
-            correct,
-            incorrect,
-            pending,
-            by_symbol,
-        })
     }
 
     pub async fn get_history(

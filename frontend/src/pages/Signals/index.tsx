@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Box, Typography, Grid, CircularProgress, Alert, Snackbar } from '@mui/material';
 import { useSignalsActions } from './hooks/useSignalsActions';
 import { useStateSignals } from './hooks/useStateSignals';
@@ -6,8 +6,8 @@ import { PredictionCard } from './components/PredictionCard';
 import { SignalForm } from './components/SignalForm';
 
 export const Signals = () => {
-    const { runAnalysis, loadPredictions } = useSignalsActions();
-    const { predictions, loading, analyzing, error } = useStateSignals();
+    const { runAnalysis } = useSignalsActions();
+    const { predictions, analyzing, error } = useStateSignals();
     const [directionFilter, setDirectionFilter] = useState('all');
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
@@ -18,10 +18,6 @@ export const Signals = () => {
         message: '',
         severity: 'success',
     });
-
-    useEffect(() => {
-        loadPredictions();
-    }, []);
 
     const handleRunAnalysis = async (params: {
         pairs: string[];
@@ -68,7 +64,7 @@ export const Signals = () => {
                 </Alert>
             )}
 
-            {(loading || analyzing) && predictions.length === 0 ? (
+            {analyzing && predictions.length === 0 ? (
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight={300}>
                     <CircularProgress color="primary" />
                 </Box>

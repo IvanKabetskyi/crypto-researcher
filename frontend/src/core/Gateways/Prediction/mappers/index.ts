@@ -1,6 +1,4 @@
 import { Prediction } from 'core/Entities/Prediction/types';
-import { MarketData } from 'core/Entities/Market/types';
-import { AccuracyStats } from 'core/Entities/Accuracy/types';
 import { HistoryResponse } from 'core/Entities/History/types';
 
 interface PredictionApiResponse {
@@ -17,31 +15,6 @@ interface PredictionApiResponse {
     timeframe?: string;
 }
 
-interface MarketApiResponse {
-    symbol: string;
-    price: number;
-    change_24h: number;
-    volume_24h: number;
-}
-
-interface AccuracyApiResponse {
-    total_predictions: number;
-    correct: number;
-    incorrect: number;
-    pending: number;
-    accuracy_percentage: number;
-    by_symbol: Record<
-        string,
-        {
-            total: number;
-            correct: number;
-            incorrect: number;
-            pending: number;
-            accuracy_percentage: number;
-        }
-    >;
-}
-
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
     id: data.id,
     symbol: data.symbol,
@@ -54,33 +27,6 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     createdAt: data.created_at,
     outcome: data.outcome,
     timeframe: data.timeframe,
-});
-
-export const transformMarketResponse = (data: MarketApiResponse): MarketData => ({
-    symbol: data.symbol,
-    price: data.price,
-    change24h: data.change_24h,
-    volume24h: data.volume_24h,
-});
-
-export const transformAccuracyResponse = (data: AccuracyApiResponse): AccuracyStats => ({
-    totalPredictions: data.total_predictions,
-    correct: data.correct,
-    incorrect: data.incorrect,
-    pending: data.pending,
-    accuracyPercentage: data.accuracy_percentage,
-    bySymbol: Object.fromEntries(
-        Object.entries(data.by_symbol).map(([symbol, stats]) => [
-            symbol,
-            {
-                total: stats.total,
-                correct: stats.correct,
-                incorrect: stats.incorrect,
-                pending: stats.pending,
-                accuracy: stats.accuracy_percentage,
-            },
-        ]),
-    ),
 });
 
 interface HistoryApiResponse {

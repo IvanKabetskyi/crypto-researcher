@@ -3,18 +3,16 @@ import { persistStore, persistReducer } from 'redux-persist';
 import storage from 'redux-persist/lib/storage';
 import signalsReducer from 'pages/Signals/redux';
 import historyReducer from 'pages/History/redux';
-import filterReducer from 'store/slices/Filter';
 
 const rootReducer = combineReducers({
     signals: signalsReducer,
     history: historyReducer,
-    filter: filterReducer,
 });
 
 const persistConfig = {
-    key: 'cryptoResearcher0.0.2',
+    key: 'cryptoResearcher0.0.3',
     storage,
-    whitelist: ['filter'],
+    whitelist: [],
 };
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);

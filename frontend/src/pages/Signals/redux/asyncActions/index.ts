@@ -14,13 +14,3 @@ export const runAnalysis = createAsyncThunk<Prediction[], RunAnalysisParams>(
         return await predictionRequests.triggerAnalysis(params);
     },
 );
-
-export const fetchSignalsPredictions = createAsyncThunk<Prediction[], { min_confidence?: number } | undefined>(
-    'signals/fetchPredictions',
-    async (params) => {
-        return await predictionRequests.fetchPredictions({
-            min_confidence: params?.min_confidence,
-            limit: 50,
-        });
-    },
-);

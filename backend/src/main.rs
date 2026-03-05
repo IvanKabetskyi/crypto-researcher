@@ -6,9 +6,7 @@ use actix_cors::Cors;
 use actix_web::{App, HttpServer};
 
 use application::controller::history::get_history;
-use application::controller::prediction::{
-    get_accuracy, get_market, get_predictions, get_settings, trigger_analysis, update_settings,
-};
+use application::controller::prediction::trigger_analysis;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -34,13 +32,8 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::permissive();
         App::new()
             .wrap(cors)
-            .service(get_predictions)
-            .service(get_accuracy)
             .service(get_history)
-            .service(get_market)
             .service(trigger_analysis)
-            .service(get_settings)
-            .service(update_settings)
     })
     .bind((host.as_str(), port))?
     .run()
