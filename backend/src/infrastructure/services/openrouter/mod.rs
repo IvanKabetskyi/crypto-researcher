@@ -13,12 +13,14 @@ struct ChatMessage {
 #[derive(Serialize)]
 struct ChatRequest {
     model: String,
+    max_tokens: u32,
+    system: String,
     messages: Vec<ChatMessage>,
 }
 
 #[derive(Deserialize, Debug)]
 struct ChatResponse {
-    choices: Option<Vec<ChatChoice>>,
+    content: Option<Vec<ContentBlock>>,
     error: Option<ChatError>,
 }
 
@@ -28,13 +30,8 @@ struct ChatError {
 }
 
 #[derive(Deserialize, Debug)]
-struct ChatChoice {
-    message: ChatResponseMessage,
-}
-
-#[derive(Deserialize, Debug)]
-struct ChatResponseMessage {
-    content: Option<String>,
+struct ContentBlock {
+    text: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -63,9 +60,9 @@ pub struct AIService {
 impl AIService {
     pub fn new() -> Self {
         let base_url = std::env::var("AI_API_URL")
-            .unwrap_or_else(|_| "https://api.groq.com/openai/v1".into());
+            .unwrap_or_else(|_| "https://api.anthropic.com/v1".into());
         let model = std::env::var("AI_MODEL")
-            .unwrap_or_else(|_| "llama-3.3-70b-versatile".into());
+            .unwrap_or_else(|_| "claude-haiku-4-5-20251001".into());
         let api_key = std::env::var("AI_API_KEY")
             .unwrap_or_default();
 
@@ -86,7 +83,7 @@ impl AIService {
         timeframe: &str,
     ) -> Result<Vec<Prediction>, Box<dyn std::error::Error + Send + Sync>> {
         if self.api_key.is_empty() {
-            return Err("AI_API_KEY not set. Get a free key at https://console.groq.com".into());
+            return Err("AI_API_KEY not set. Get a key at https://console.anthropic.com".into());
         }
 
         let tickers_json = snapshot.tickers_to_json();
@@ -119,11 +116,9 @@ impl AIService {
 
         let request_body = ChatRequest {
             model: self.model.clone(),
+            max_tokens: 4096,
+            system: system_content,
             messages: vec![
-                ChatMessage {
-                    role: String::from("system"),
-                    content: system_content,
-                },
                 ChatMessage {
                     role: String::from("user"),
                     content: user_content,
@@ -131,7 +126,7 @@ impl AIService {
             ],
         };
 
-        let url = format!("{}/chat/completions", self.base_url);
+        let url = format!("{}/messages", self.base_url);
 
         tracing::info!("Calling AI model: {} at {}", self.model, self.base_url);
 
@@ -139,7 +134,8 @@ impl AIService {
             .client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
             .json(&request_body)
             .send()
             .await?;
@@ -167,15 +163,16 @@ impl AIService {
             return Err(format!("AI API error: {}", error.message).into());
         }
 
-        let choices = chat_response.choices.unwrap_or_default();
-        if choices.is_empty() {
-            return Err("No choices returned from AI".into());
-        }
+        let blocks = chat_response.content.unwrap_or_default();
+        let content = blocks
+            .iter()
+            .filter_map(|b| b.text.as_deref())
+            .collect::<Vec<_>>()
+            .join("");
 
-        let content = match &choices[0].message.content {
-            Some(c) => c.clone(),
-            None => return Err("Empty content in AI response".into()),
-        };
+        if content.is_empty() {
+            return Err("Empty content in AI response".into());
+        }
 
         tracing::info!("AI response content length: {} chars", content.len());
 
