@@ -5,8 +5,9 @@ mod infrastructure;
 use actix_cors::Cors;
 use actix_web::{App, HttpServer};
 
-use application::controller::history::get_history;
 use application::controller::analyze::trigger_analysis;
+use application::controller::config::get_config;
+use application::controller::history::get_history;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -32,6 +33,7 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::permissive();
         App::new()
             .wrap(cors)
+            .service(get_config)
             .service(get_history)
             .service(trigger_analysis)
     })

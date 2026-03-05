@@ -23,18 +23,24 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import { useHistoryActions } from './useHistoryActions';
-import { useStateHistory } from './useStateHistory';
+import { useHistoryActions } from './hooks/useHistoryActions';
+import { useStateHistory } from './hooks/useStateHistory';
+import { useSignalsActions } from 'pages/Signals/hooks/useSignalsActions';
+import { useStateSignals } from 'pages/Signals/hooks/useStateSignals';
 import { HistoryParams } from 'types/history';
-
-const formatPrice = (price: number) => {
-    if (price >= 1) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return price.toFixed(6);
-};
+import { formatPrice } from 'utils/formatting';
 
 export const History: React.FC = () => {
     const { loadHistory } = useHistoryActions();
     const { items, total, page, perPage, loading, error } = useStateHistory();
+    const { fetchConfig } = useSignalsActions();
+    const { availablePairs, configLoaded } = useStateSignals();
+
+    useEffect(() => {
+        if (!configLoaded) {
+            fetchConfig();
+        }
+    }, [configLoaded]);
 
     const [symbol, setSymbol] = useState<string>('');
     const [direction, setDirection] = useState<string>('');
@@ -124,11 +130,9 @@ export const History: React.FC = () => {
                         <InputLabel>Symbol</InputLabel>
                         <Select value={symbol} label="Symbol" onChange={(e) => setSymbol(e.target.value)}>
                             <MenuItem value="">All</MenuItem>
-                            <MenuItem value="BTCUSDT">BTCUSDT</MenuItem>
-                            <MenuItem value="ETHUSDT">ETHUSDT</MenuItem>
-                            <MenuItem value="SOLUSDT">SOLUSDT</MenuItem>
-                            <MenuItem value="XRPUSDT">XRPUSDT</MenuItem>
-                            <MenuItem value="DOGEUSDT">DOGEUSDT</MenuItem>
+                            {availablePairs.map((pair) => (
+                                <MenuItem key={pair} value={pair}>{pair}</MenuItem>
+                            ))}
                         </Select>
                     </FormControl>
 

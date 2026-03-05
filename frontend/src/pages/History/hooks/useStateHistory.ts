@@ -7,7 +7,7 @@ import {
     getHistoryTotalPages,
     getHistoryLoading,
     getHistoryError,
-} from './selectors';
+} from '../redux/selectors';
 
 export const useStateHistory = () => {
     const items = useSelector(getHistoryItems);

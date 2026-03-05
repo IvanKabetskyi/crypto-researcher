@@ -13,31 +13,15 @@ import {
     Paper,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-
-const AVAILABLE_PAIRS = [
-    'BTCUSDT',
-    'ETHUSDT',
-    'SOLUSDT',
-    'BNBUSDT',
-    'XRPUSDT',
-    'DOGEUSDT',
-    'ADAUSDT',
-    'AVAXUSDT',
-];
-
-const TIMEFRAMES = [
-    { value: '30min', label: '30 min' },
-    { value: '1h', label: '1h' },
-    { value: '6h', label: '6h' },
-    { value: '12h', label: '12h' },
-    { value: '24h', label: '24h' },
-];
+import { Timeframe } from 'types/config';
 
 interface SignalFormProps {
     onSubmit: (params: { pairs: string[]; timeframe: string; min_confidence: number }) => void;
     analyzing: boolean;
     directionFilter: string;
     onDirectionFilterChange: (value: string) => void;
+    availablePairs: string[];
+    availableTimeframes: Timeframe[];
 }
 
 export const SignalForm: React.FC<SignalFormProps> = ({
@@ -45,9 +29,20 @@ export const SignalForm: React.FC<SignalFormProps> = ({
     analyzing,
     directionFilter,
     onDirectionFilterChange,
+    availablePairs,
+    availableTimeframes,
 }) => {
-    const [selectedPairs, setSelectedPairs] = React.useState<string[]>(['BTCUSDT', 'ETHUSDT']);
-    const [timeframe, setTimeframe] = React.useState('1h');
+    const [selectedPairs, setSelectedPairs] = React.useState<string[]>([]);
+    const [timeframe, setTimeframe] = React.useState('');
+    const [initialized, setInitialized] = React.useState(false);
+
+    React.useEffect(() => {
+        if (!initialized && availablePairs.length > 0 && availableTimeframes.length > 0) {
+            setSelectedPairs(availablePairs.slice(0, 2));
+            setTimeframe(availableTimeframes[1]?.value ?? availableTimeframes[0].value);
+            setInitialized(true);
+        }
+    }, [availablePairs, availableTimeframes, initialized]);
     const [minConfidence, setMinConfidence] = React.useState(70);
 
     const togglePair = (pair: string) => {
@@ -72,7 +67,7 @@ export const SignalForm: React.FC<SignalFormProps> = ({
                     Trading Pairs
                 </Typography>
                 <Box display="flex" gap={1} flexWrap="wrap">
-                    {AVAILABLE_PAIRS.map((pair) => (
+                    {availablePairs.map((pair) => (
                         <Chip
                             key={pair}
                             label={pair}
@@ -93,7 +88,7 @@ export const SignalForm: React.FC<SignalFormProps> = ({
                         label="Timeframe"
                         onChange={(e) => setTimeframe(e.target.value)}
                     >
-                        {TIMEFRAMES.map((tf) => (
+                        {availableTimeframes.map((tf) => (
                             <MenuItem key={tf.value} value={tf.value}>
                                 {tf.label}
                             </MenuItem>

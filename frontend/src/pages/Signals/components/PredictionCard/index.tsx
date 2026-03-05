@@ -3,17 +3,12 @@ import { Card, CardContent, Typography, Box, Chip, Divider } from '@mui/material
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import { Prediction } from 'types/prediction';
-import { ConfidenceBadge } from './ConfidenceBadge';
+import { ConfidenceBadge } from '../ConfidenceBadge';
+import { formatPrice } from 'utils/formatting';
 
 interface PredictionCardProps {
     prediction: Prediction;
 }
-
-const formatPrice = (price: number): string => {
-    if (price >= 1000) return price.toLocaleString('en-US', { maximumFractionDigits: 2 });
-    if (price >= 1) return price.toFixed(4);
-    return price.toFixed(6);
-};
 
 const getOutcomeColor = (outcome: Prediction['outcome']): string => {
     switch (outcome) {

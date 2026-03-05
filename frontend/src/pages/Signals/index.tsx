@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Typography, Grid, CircularProgress, Alert, Snackbar } from '@mui/material';
-import { useSignalsActions } from './useSignalsActions';
-import { useStateSignals } from './useStateSignals';
-import { PredictionCard } from './PredictionCard';
-import { SignalForm } from './SignalForm';
+import { useSignalsActions } from './hooks/useSignalsActions';
+import { useStateSignals } from './hooks/useStateSignals';
+import { PredictionCard } from './components/PredictionCard';
+import { SignalForm } from './components/SignalForm';
 
 export const Signals = () => {
-    const { runAnalysis } = useSignalsActions();
-    const { predictions, analyzing, error } = useStateSignals();
+    const { runAnalysis, fetchConfig } = useSignalsActions();
+    const { predictions, analyzing, error, availablePairs, availableTimeframes, configLoaded } = useStateSignals();
+
+    useEffect(() => {
+        if (!configLoaded) {
+            fetchConfig();
+        }
+    }, [configLoaded]);
     const [directionFilter, setDirectionFilter] = useState('all');
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
@@ -56,6 +62,8 @@ export const Signals = () => {
                 analyzing={analyzing}
                 directionFilter={directionFilter}
                 onDirectionFilterChange={setDirectionFilter}
+                availablePairs={availablePairs}
+                availableTimeframes={availableTimeframes}
             />
 
             {error && (

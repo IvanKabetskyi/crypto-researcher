@@ -8,6 +8,7 @@ use crate::infrastructure::services::openrouter::AIService;
 
 fn map_timeframe_to_interval(timeframe: &str) -> &str {
     match timeframe {
+        "5min" => "5",
         "30min" => "30",
         "1h" => "60",
         "6h" => "360",

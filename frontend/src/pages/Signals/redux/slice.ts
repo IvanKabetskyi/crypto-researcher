@@ -1,17 +1,24 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { Prediction } from 'types/prediction';
-import { runAnalysis } from './asyncActions';
+import { Timeframe } from 'types/config';
+import { runAnalysis, fetchConfig } from './asyncActions';
 
 interface SignalsState {
     predictions: Prediction[];
     analyzing: boolean;
     error: string | null;
+    availablePairs: string[];
+    availableTimeframes: Timeframe[];
+    configLoaded: boolean;
 }
 
 const initialState: SignalsState = {
     predictions: [],
     analyzing: false,
     error: null,
+    availablePairs: [],
+    availableTimeframes: [],
+    configLoaded: false,
 };
 
 const signalsSlice = createSlice({
@@ -31,6 +38,11 @@ const signalsSlice = createSlice({
             .addCase(runAnalysis.rejected, (state, action) => {
                 state.analyzing = false;
                 state.error = action.error.message || 'Analysis failed';
+            })
+            .addCase(fetchConfig.fulfilled, (state, action) => {
+                state.availablePairs = action.payload.pairs;
+                state.availableTimeframes = action.payload.timeframes;
+                state.configLoaded = true;
             });
     },
 });
