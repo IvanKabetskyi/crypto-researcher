@@ -1,3 +1,4 @@
+use crate::application::dto::prediction_dto::PredictionDto;
 use crate::application::request_dto::analyze_params_dto::AnalyzeParams;
 use crate::domain::market::entities::MarketSnapshot;
 use crate::domain::prediction::services::AnalysisService;
@@ -17,7 +18,7 @@ fn map_timeframe_to_interval(timeframe: &str) -> &str {
     }
 }
 
-pub async fn run_analysis_use_case(params: AnalyzeParams) {
+pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> {
     let symbols = params.pairs;
     let timeframe = &params.timeframe;
     let min_confidence = params.min_confidence;
@@ -37,13 +38,13 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) {
         }
         Err(e) => {
             tracing::error!("Failed to fetch tickers from Bybit: {}", e);
-            return;
+            return vec![];
         }
     };
 
     if tickers.is_empty() {
         tracing::error!("No tickers returned from Bybit - check pair names");
-        return;
+        return vec![];
     }
 
     // Fetch klines
@@ -83,13 +84,13 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) {
         }
         Err(e) => {
             tracing::error!("AI analysis failed: {}", e);
-            return;
+            return vec![];
         }
     };
 
     if raw_predictions.is_empty() {
         tracing::warn!("AI returned 0 predictions");
-        return;
+        return vec![];
     }
 
     // Filter by confidence
@@ -101,18 +102,20 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) {
         raw_predictions.len()
     );
 
-    // Save to MongoDB
+    // Save to MongoDB and collect DTOs
     let prediction_repository = PredictionRepository::new().await;
+    let mut saved_dtos: Vec<PredictionDto> = Vec::new();
 
     for prediction in filtered {
         match prediction_repository.save_prediction(prediction).await {
-            Ok(_) => {
+            Ok(saved) => {
                 tracing::info!(
                     "Saved prediction: {} {} {:.1}% confidence",
                     prediction.get_symbol(),
                     prediction.get_direction(),
                     prediction.get_confidence()
                 );
+                saved_dtos.push(PredictionDto::transform_entity(saved));
             }
             Err(e) => {
                 tracing::error!(
@@ -123,4 +126,6 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) {
             }
         }
     }
+
+    saved_dtos
 }

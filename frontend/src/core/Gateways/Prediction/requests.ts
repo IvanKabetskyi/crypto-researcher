@@ -51,9 +51,9 @@ export const predictionRequests = {
         pairs: string[];
         timeframe: string;
         min_confidence: number;
-    }): Promise<{ success: boolean; message: string }> => {
+    }): Promise<Prediction[]> => {
         const response = await apiClient.post('/analyze', params, { timeout: 300000 });
-        return response.data;
+        return response.data.map(transformPredictionResponse);
     },
 
     fetchSettings: async (): Promise<Settings> => {

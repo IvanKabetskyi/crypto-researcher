@@ -11,12 +11,7 @@ interface RunAnalysisParams {
 export const runAnalysis = createAsyncThunk<Prediction[], RunAnalysisParams>(
     'signals/runAnalysis',
     async (params) => {
-        await predictionRequests.triggerAnalysis(params);
-        const predictions = await predictionRequests.fetchPredictions({
-            min_confidence: params.min_confidence,
-            limit: 50,
-        });
-        return predictions;
+        return await predictionRequests.triggerAnalysis(params);
     },
 );
 

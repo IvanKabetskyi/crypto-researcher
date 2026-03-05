@@ -49,21 +49,12 @@ pub async fn get_market() -> HttpResponse {
     }
 }
 
-#[derive(Serialize)]
-struct AnalyzeResponse {
-    success: bool,
-    message: String,
-}
-
 #[post("/api/analyze")]
 pub async fn trigger_analysis(body: Json<AnalyzeParams>) -> HttpResponse {
     let params = body.into_inner();
     tracing::info!("Manual analysis triggered from frontend: pairs={:?}, timeframe={}", params.pairs, params.timeframe);
-    run_analysis_use_case(params).await;
-    HttpResponse::Ok().json(AnalyzeResponse {
-        success: true,
-        message: "Analysis cycle completed".into(),
-    })
+    let predictions = run_analysis_use_case(params).await;
+    HttpResponse::Ok().json(predictions)
 }
 
 #[derive(Deserialize, Serialize)]
