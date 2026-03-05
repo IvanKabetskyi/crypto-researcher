@@ -3,17 +3,6 @@ use crate::domain::prediction::entities::Prediction;
 pub struct AnalysisService;
 
 impl AnalysisService {
-    pub fn filter_by_confidence(
-        predictions: &[Prediction],
-        min_confidence: f64,
-        max_confidence: f64,
-    ) -> Vec<&Prediction> {
-        predictions
-            .iter()
-            .filter(|p| p.get_confidence() >= min_confidence && p.get_confidence() <= max_confidence)
-            .collect()
-    }
-
     pub fn build_analysis_prompt(
         tickers_json: &str,
         klines_json: &str,
@@ -30,31 +19,27 @@ impl AnalysisService {
         )
     }
 
-    pub fn determine_outcome(
-        prediction: &Prediction,
-        current_price: f64,
-    ) -> String {
+    pub fn determine_outcome(prediction: &Prediction, current_price: f64) -> String {
         let direction = prediction.get_direction();
-        let entry = prediction.get_entry_price();
         let target = prediction.get_target_price();
         let stop = prediction.get_stop_loss();
 
         if direction == "long" {
             if current_price >= target {
-                return String::from("correct");
+                return "correct".into();
             }
             if current_price <= stop {
-                return String::from("incorrect");
+                return "incorrect".into();
             }
         } else {
             if current_price <= target {
-                return String::from("correct");
+                return "correct".into();
             }
             if current_price >= stop {
-                return String::from("incorrect");
+                return "incorrect".into();
             }
         }
 
-        String::from("pending")
+        "pending".into()
     }
 }

@@ -9,17 +9,11 @@ pub async fn get_history_use_case(
     params: HistoryParams,
 ) -> Result<HistoryDto, DataError> {
     let prediction_repository = PredictionRepository::new().await;
-    let result = prediction_repository.get_history(params).await;
-
-    if result.is_err() {
-        return Err(result.err().unwrap());
-    }
-
-    let (predictions, total, page, per_page) = result.unwrap();
+    let (predictions, total, page, per_page) = prediction_repository.get_history(params).await?;
 
     let items: Vec<PredictionDto> = predictions
         .into_iter()
-        .map(|p| PredictionDto::transform_entity(p))
+        .map(PredictionDto::transform_entity)
         .collect();
 
     let total_pages = if per_page > 0 {

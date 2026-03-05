@@ -31,5 +31,5 @@ pub async fn get_db() -> &'static Mutex<MongoDatabase> {
     };
 
     let _ = DB.set(Mutex::new(mongo_db));
-    DB.get().unwrap()
+    DB.get().expect("Failed to initialize database connection")
 }

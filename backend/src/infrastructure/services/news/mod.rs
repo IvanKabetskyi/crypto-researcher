@@ -106,17 +106,14 @@ impl CryptoRssService {
             let item = &item_block[..end];
 
             let title = extract_xml_tag(item, "title").unwrap_or_default();
-            let link = extract_xml_tag(item, "link").unwrap_or_default();
             let pub_date = extract_xml_tag(item, "pubDate").unwrap_or_default();
 
             if !title.is_empty() {
-                // Simple sentiment guess from title keywords
                 let sentiment = guess_sentiment(&title);
 
                 articles.push(NewsArticle::new(
                     &title,
                     source_name,
-                    &link,
                     sentiment,
                     &pub_date,
                 ));

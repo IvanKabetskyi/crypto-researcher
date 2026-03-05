@@ -1,7 +1,6 @@
 use crate::application::dto::prediction_dto::PredictionDto;
 use crate::application::request_dto::analyze_params_dto::AnalyzeParams;
 use crate::domain::market::entities::MarketSnapshot;
-use crate::domain::prediction::services::AnalysisService;
 use crate::infrastructure::repositories::prediction::PredictionRepository;
 use crate::infrastructure::services::bybit::BybitService;
 use crate::infrastructure::services::news::CryptoRssService;
@@ -61,7 +60,7 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> 
         }
     }
 
-    // Fetch news (optional - continue without it)
+    // Fetch news
     let currencies: Vec<String> = symbols.iter().map(|s| s.replace("USDT", "")).collect();
     let news = match news_service.fetch_news(&currencies).await {
         Ok(articles) => {
@@ -94,7 +93,11 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> 
     }
 
     // Filter by confidence
-    let filtered = AnalysisService::filter_by_confidence(&raw_predictions, min_confidence, 100.0);
+    let filtered: Vec<_> = raw_predictions
+        .iter()
+        .filter(|p| p.get_confidence() >= min_confidence && p.get_confidence() <= 100.0)
+        .collect();
+
     tracing::info!(
         "After confidence filter (>= {}): {} of {} predictions kept",
         min_confidence,

@@ -31,60 +31,23 @@ impl PredictionRepository {
     }
 
     pub async fn save_prediction(&self, prediction: &Prediction) -> Result<Prediction, DataError> {
-        let document = PredictionSchema {
-            id: prediction.get_id(),
-            symbol: prediction.get_symbol(),
-            direction: prediction.get_direction(),
-            confidence: prediction.get_confidence(),
-            reasoning: prediction.get_reasoning(),
-            entry_price: prediction.get_entry_price(),
-            target_price: prediction.get_target_price(),
-            stop_loss: prediction.get_stop_loss(),
-            created_at: prediction.get_created_at(),
-            outcome: prediction.get_outcome(),
-            actual_price_after: prediction.get_actual_price_after(),
-            timeframe: prediction.get_timeframe(),
-        };
+        let document = PredictionSchema::from_prediction(prediction);
 
-        let result = self.collection.insert_one(document, None).await;
+        let inserted_id = self
+            .collection
+            .insert_one(document, None)
+            .await
+            .map_err(|_| DataError::new("failed to save prediction"))?
+            .inserted_id;
 
-        if result.is_err() {
-            return Err(DataError::new("failed to save prediction"));
-        }
-
-        let inserted_id = result.unwrap().inserted_id;
-
-        let saved = self
+        let schema = self
             .collection
             .find_one(Some(doc! {"_id": inserted_id.as_object_id()}), None)
-            .await;
+            .await
+            .map_err(|_| DataError::new("failed to retrieve saved prediction"))?
+            .ok_or_else(|| DataError::new("saved prediction not found"))?;
 
-        if saved.is_err() {
-            return Err(DataError::new("failed to retrieve saved prediction"));
-        }
-
-        let schema = saved.unwrap();
-
-        if schema.is_none() {
-            return Err(DataError::new("saved prediction not found"));
-        }
-
-        let s = schema.unwrap();
-
-        Ok(Prediction::new(
-            &s.symbol,
-            &s.direction,
-            s.confidence,
-            &s.reasoning,
-            s.entry_price,
-            s.target_price,
-            s.stop_loss,
-            Some(s.id),
-            Some(s.created_at),
-            s.outcome,
-            s.actual_price_after,
-            s.timeframe,
-        ))
+        Ok(schema.to_prediction())
     }
 
     pub async fn get_predictions(
@@ -112,36 +75,16 @@ impl PredictionRepository {
             .limit(limit)
             .build();
 
-        let cursor_result = self
+        let mut cursor = self
             .collection
             .find(Some(filter_doc), Some(find_options))
-            .await;
-
-        if cursor_result.is_err() {
-            return Err(DataError::new("failed to query predictions"));
-        }
-
-        let mut cursor = cursor_result.unwrap();
+            .await
+            .map_err(|_| DataError::new("failed to query predictions"))?;
 
         let mut predictions: Vec<Prediction> = Vec::new();
 
-        while let Some(result) = cursor.next().await {
-            if let Ok(s) = result {
-                predictions.push(Prediction::new(
-                    &s.symbol,
-                    &s.direction,
-                    s.confidence,
-                    &s.reasoning,
-                    s.entry_price,
-                    s.target_price,
-                    s.stop_loss,
-                    Some(s.id),
-                    Some(s.created_at),
-                    s.outcome,
-                    s.actual_price_after,
-                    s.timeframe,
-                ));
-            }
+        while let Some(Ok(s)) = cursor.next().await {
+            predictions.push(s.to_prediction());
         }
 
         Ok(predictions)
@@ -150,20 +93,19 @@ impl PredictionRepository {
     pub async fn update_outcome(
         &self,
         id: ObjectId,
-        outcome: String,
+        outcome: &str,
         actual_price: f64,
     ) -> Result<(), DataError> {
         let filter = doc! {"_id": &id};
         let update = doc! {"$set": {
-            "outcome": &outcome,
+            "outcome": outcome,
             "actual_price_after": actual_price,
         }};
 
-        let response = self.collection.update_one(filter, update, None).await;
-
-        if response.is_err() {
-            return Err(DataError::new("failed to update prediction outcome"));
-        }
+        self.collection
+            .update_one(filter, update, None)
+            .await
+            .map_err(|_| DataError::new("failed to update prediction outcome"))?;
 
         Ok(())
     }
@@ -183,7 +125,11 @@ impl PredictionRepository {
         }
 
         if let Some(ref outcome) = params.outcome {
-            filter_doc.insert("outcome", outcome);
+            if outcome == "pending" {
+                filter_doc.insert("outcome", doc! {"$in": [null, "pending"]});
+            } else {
+                filter_doc.insert("outcome", outcome);
+            }
         }
 
         if params.date_from.is_some() || params.date_to.is_some() {
@@ -209,11 +155,11 @@ impl PredictionRepository {
         let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
         let skip = (page - 1) * per_page;
 
-        let count_result = self.collection.count_documents(Some(filter_doc.clone()), None).await;
-        if count_result.is_err() {
-            return Err(DataError::new("failed to count history predictions"));
-        }
-        let total = count_result.unwrap() as i64;
+        let total = self
+            .collection
+            .count_documents(Some(filter_doc.clone()), None)
+            .await
+            .map_err(|_| DataError::new("failed to count history predictions"))? as i64;
 
         let find_options = FindOptions::builder()
             .sort(doc! {"created_at": -1})
@@ -221,35 +167,16 @@ impl PredictionRepository {
             .limit(Some(per_page))
             .build();
 
-        let cursor_result = self
+        let mut cursor = self
             .collection
             .find(Some(filter_doc), Some(find_options))
-            .await;
+            .await
+            .map_err(|_| DataError::new("failed to query history predictions"))?;
 
-        if cursor_result.is_err() {
-            return Err(DataError::new("failed to query history predictions"));
-        }
-
-        let mut cursor = cursor_result.unwrap();
         let mut predictions: Vec<Prediction> = Vec::new();
 
-        while let Some(result) = cursor.next().await {
-            if let Ok(s) = result {
-                predictions.push(Prediction::new(
-                    &s.symbol,
-                    &s.direction,
-                    s.confidence,
-                    &s.reasoning,
-                    s.entry_price,
-                    s.target_price,
-                    s.stop_loss,
-                    Some(s.id),
-                    Some(s.created_at),
-                    s.outcome,
-                    s.actual_price_after,
-                    s.timeframe,
-                ));
-            }
+        while let Some(Ok(s)) = cursor.next().await {
+            predictions.push(s.to_prediction());
         }
 
         Ok((predictions, total, page, per_page))

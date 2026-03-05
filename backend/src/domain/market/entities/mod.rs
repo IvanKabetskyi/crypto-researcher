@@ -19,7 +19,7 @@ impl Ticker {
         low_price_24h: f64,
     ) -> Self {
         Self {
-            symbol: String::from(symbol),
+            symbol: symbol.into(),
             last_price,
             price_24h_pcnt,
             volume_24h,
@@ -28,8 +28,8 @@ impl Ticker {
         }
     }
 
-    pub fn get_symbol(&self) -> String {
-        self.symbol.clone()
+    pub fn get_symbol(&self) -> &str {
+        &self.symbol
     }
 
     pub fn get_last_price(&self) -> f64 {
@@ -102,7 +102,6 @@ impl Kline {
 pub struct NewsArticle {
     title: String,
     source: String,
-    url: String,
     sentiment: Option<String>,
     published_at: String,
 }
@@ -111,37 +110,31 @@ impl NewsArticle {
     pub fn new(
         title: &str,
         source: &str,
-        url: &str,
         sentiment: Option<String>,
         published_at: &str,
     ) -> Self {
         Self {
-            title: String::from(title),
-            source: String::from(source),
-            url: String::from(url),
+            title: title.into(),
+            source: source.into(),
             sentiment,
-            published_at: String::from(published_at),
+            published_at: published_at.into(),
         }
     }
 
-    pub fn get_title(&self) -> String {
-        self.title.clone()
+    pub fn get_title(&self) -> &str {
+        &self.title
     }
 
-    pub fn get_source(&self) -> String {
-        self.source.clone()
+    pub fn get_source(&self) -> &str {
+        &self.source
     }
 
-    pub fn get_url(&self) -> String {
-        self.url.clone()
+    pub fn get_sentiment(&self) -> Option<&str> {
+        self.sentiment.as_deref()
     }
 
-    pub fn get_sentiment(&self) -> Option<String> {
-        self.sentiment.clone()
-    }
-
-    pub fn get_published_at(&self) -> String {
-        self.published_at.clone()
+    pub fn get_published_at(&self) -> &str {
+        &self.published_at
     }
 }
 
@@ -162,18 +155,6 @@ impl MarketSnapshot {
             klines,
             news,
         }
-    }
-
-    pub fn get_tickers(&self) -> &Vec<Ticker> {
-        &self.tickers
-    }
-
-    pub fn get_klines(&self) -> &HashMap<String, Vec<Kline>> {
-        &self.klines
-    }
-
-    pub fn get_news(&self) -> &Vec<NewsArticle> {
-        &self.news
     }
 
     pub fn tickers_to_json(&self) -> String {

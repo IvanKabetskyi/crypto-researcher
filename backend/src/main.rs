@@ -6,7 +6,7 @@ use actix_cors::Cors;
 use actix_web::{App, HttpServer};
 
 use application::controller::history::get_history;
-use application::controller::prediction::trigger_analysis;
+use application::controller::analyze::trigger_analysis;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -17,13 +17,13 @@ async fn main() -> std::io::Result<()> {
     let port: u16 = std::env::var("SERVER_PORT")
         .unwrap_or_else(|_| "8080".into())
         .parse()
-        .unwrap();
+        .expect("SERVER_PORT must be a valid u16");
 
     infrastructure::services::scheduler::start_scheduler(
         std::env::var("ANALYSIS_INTERVAL_SECS")
             .unwrap_or_else(|_| "300".into())
             .parse()
-            .unwrap(),
+            .expect("ANALYSIS_INTERVAL_SECS must be a valid u64"),
     );
 
     tracing::info!("Starting server on {}:{}", host, port);

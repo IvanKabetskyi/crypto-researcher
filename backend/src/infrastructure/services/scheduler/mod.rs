@@ -39,28 +39,27 @@ async fn check_past_predictions() {
         limit: Some(100),
     };
 
-    let predictions_response = prediction_repository.get_predictions(filter).await;
-
-    if predictions_response.is_err() {
-        tracing::error!("Failed to fetch past predictions for outcome check");
-        return;
-    }
-
-    let predictions = predictions_response.unwrap();
+    let predictions = match prediction_repository.get_predictions(filter).await {
+        Ok(preds) => preds,
+        Err(_) => {
+            tracing::error!("Failed to fetch past predictions for outcome check");
+            return;
+        }
+    };
 
     let bybit_service = BybitService::new();
 
-    let pending_predictions: Vec<&crate::domain::prediction::entities::Prediction> = predictions
+    let pending_predictions: Vec<_> = predictions
         .iter()
         .filter(|p| {
             let outcome = p.get_outcome();
-            outcome.is_none() || outcome.as_deref() == Some("pending")
+            outcome.is_none() || outcome == Some("pending")
         })
         .collect();
 
     for prediction in pending_predictions {
-        let symbol = prediction.get_symbol();
-        let symbols = vec![symbol.clone()];
+        let symbol = prediction.get_symbol().to_string();
+        let symbols = vec![symbol];
         let tickers_result = bybit_service.fetch_tickers(&symbols).await;
 
         if let Ok(tickers) = tickers_result {
@@ -70,10 +69,10 @@ async fn check_past_predictions() {
 
                 if outcome != "pending" {
                     let update_result = prediction_repository
-                        .update_outcome(prediction.get_id(), outcome.clone(), current_price)
+                        .update_outcome(prediction.get_id(), &outcome, current_price)
                         .await;
 
-                    if update_result.is_err() {
+                    if let Err(_) = update_result {
                         tracing::error!(
                             "Failed to update outcome for prediction {}",
                             prediction.get_id()

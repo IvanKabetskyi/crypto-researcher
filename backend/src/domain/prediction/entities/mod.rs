@@ -33,10 +33,10 @@ impl Prediction {
     ) -> Self {
         Self {
             id: id.unwrap_or(ObjectId::new()),
-            symbol: String::from(symbol),
-            direction: String::from(direction),
+            symbol: symbol.into(),
+            direction: direction.into(),
             confidence,
-            reasoning: String::from(reasoning),
+            reasoning: reasoning.into(),
             entry_price,
             target_price,
             stop_loss,
@@ -48,23 +48,23 @@ impl Prediction {
     }
 
     pub fn get_id(&self) -> ObjectId {
-        self.id.clone()
+        self.id
     }
 
-    pub fn get_symbol(&self) -> String {
-        self.symbol.clone()
+    pub fn get_symbol(&self) -> &str {
+        &self.symbol
     }
 
-    pub fn get_direction(&self) -> String {
-        self.direction.clone()
+    pub fn get_direction(&self) -> &str {
+        &self.direction
     }
 
     pub fn get_confidence(&self) -> f64 {
         self.confidence
     }
 
-    pub fn get_reasoning(&self) -> String {
-        self.reasoning.clone()
+    pub fn get_reasoning(&self) -> &str {
+        &self.reasoning
     }
 
     pub fn get_entry_price(&self) -> f64 {
@@ -83,23 +83,15 @@ impl Prediction {
         self.created_at
     }
 
-    pub fn get_outcome(&self) -> Option<String> {
-        self.outcome.clone()
+    pub fn get_outcome(&self) -> Option<&str> {
+        self.outcome.as_deref()
     }
 
     pub fn get_actual_price_after(&self) -> Option<f64> {
         self.actual_price_after
     }
 
-    pub fn get_timeframe(&self) -> Option<String> {
-        self.timeframe.clone()
-    }
-
-    pub fn update_outcome(&mut self, outcome: String) {
-        self.outcome = Some(outcome);
-    }
-
-    pub fn update_actual_price_after(&mut self, price: f64) {
-        self.actual_price_after = Some(price);
+    pub fn get_timeframe(&self) -> Option<&str> {
+        self.timeframe.as_deref()
     }
 }
