@@ -3,11 +3,13 @@ mod domain;
 mod infrastructure;
 
 use actix_cors::Cors;
-use actix_web::{App, HttpServer};
+use actix_web::{App, HttpServer, middleware::from_fn};
 
 use application::controller::analyze::trigger_analysis;
+use application::controller::auth::login;
 use application::controller::config::get_config;
 use application::controller::history::get_history;
+use application::middleware::auth_middleware;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -19,6 +21,9 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or_else(|_| "8080".into())
         .parse()
         .expect("SERVER_PORT must be a valid u16");
+
+    // Seed default users
+    application::usecases::seed_users::seed_users().await;
 
     infrastructure::services::scheduler::start_scheduler(
         std::env::var("ANALYSIS_INTERVAL_SECS")
@@ -33,6 +38,8 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::permissive();
         App::new()
             .wrap(cors)
+            .wrap(from_fn(auth_middleware))
+            .service(login)
             .service(get_config)
             .service(get_history)
             .service(trigger_analysis)

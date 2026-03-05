@@ -3,6 +3,14 @@ import { transformPredictionResponse, transformHistoryResponse } from 'api/mappe
 import { Prediction } from 'types/prediction';
 import { HistoryResponse, HistoryParams } from 'types/history';
 import { AppConfig } from 'types/config';
+import { LoginParams, LoginResponse } from 'types/auth';
+
+export const authRequests = {
+    login: async (params: LoginParams): Promise<LoginResponse> => {
+        const response = await apiClient.post('/auth/login', params);
+        return response.data;
+    },
+};
 
 export const configRequests = {
     fetchConfig: async (): Promise<AppConfig> => {

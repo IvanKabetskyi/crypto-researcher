@@ -22,6 +22,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures = "0.3"
 bson = { version = "2", features = ["chrono-0_4"] }
+jsonwebtoken = "9"
+bcrypt = "0.15"
 
 [dependencies.mongodb]
 version = "2.6.1"

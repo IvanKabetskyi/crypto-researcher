@@ -1,11 +1,22 @@
 import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import HistoryIcon from '@mui/icons-material/History';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export const NavigationBar = () => {
     const navigate = useNavigate();
     const location = useLocation();
+
+    if (location.pathname === '/login') {
+        return null;
+    }
+
+    const handleLogout = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('email');
+        navigate('/login');
+    };
 
     return (
         <AppBar
@@ -28,6 +39,7 @@ export const NavigationBar = () => {
                         onClick={() => navigate('/')}
                         startIcon={<ShowChartIcon />}
                         sx={{ fontWeight: location.pathname === '/' ? 700 : 400 }}
+                        data-cy="nav-signals"
                     >
                         Signals
                     </Button>
@@ -36,10 +48,20 @@ export const NavigationBar = () => {
                         onClick={() => navigate('/history')}
                         startIcon={<HistoryIcon />}
                         sx={{ fontWeight: location.pathname === '/history' ? 700 : 400 }}
+                        data-cy="nav-history"
                     >
                         History
                     </Button>
                 </Box>
+
+                <Button
+                    color="inherit"
+                    onClick={handleLogout}
+                    startIcon={<LogoutIcon />}
+                    data-cy="logout-button"
+                >
+                    Logout
+                </Button>
             </Toolbar>
         </AppBar>
     );
