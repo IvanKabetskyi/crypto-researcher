@@ -4,8 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box } from '@mui/material';
 import { store, persistor } from 'store';
 import { theme } from './theme';
-import { AppRouter } from './Router';
-import { NavigationBar } from './NavigationBar';
+import { AppRouter } from './routing/Router';
+import { NavigationBar } from './components/NavigationBar';
 
 function App() {
     return (
