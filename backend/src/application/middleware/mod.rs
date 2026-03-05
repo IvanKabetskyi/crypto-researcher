@@ -9,6 +9,11 @@ pub async fn auth_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    // Let CORS preflight requests pass through
+    if req.method() == actix_web::http::Method::OPTIONS {
+        return next.call(req).await;
+    }
+
     let path = req.path().to_string();
 
     // Public endpoints
