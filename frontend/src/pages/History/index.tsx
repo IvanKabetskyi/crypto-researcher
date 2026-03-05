@@ -23,9 +23,9 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import { useHistoryActions } from './hooks/useHistoryActions';
-import { useStateHistory } from './hooks/useStateHistory';
-import { HistoryParams } from 'core/Entities/History/types';
+import { useHistoryActions } from './useHistoryActions';
+import { useStateHistory } from './useStateHistory';
+import { HistoryParams } from 'types/history';
 
 const formatPrice = (price: number) => {
     if (price >= 1) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });

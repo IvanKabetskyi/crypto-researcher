@@ -1,6 +1,6 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { predictionRequests } from 'core/Gateways/Prediction/requests';
-import { Prediction } from 'core/Entities/Prediction/types';
+import { predictionRequests } from 'api/requests';
+import { Prediction } from 'types/prediction';
 
 interface RunAnalysisParams {
     pairs: string[];

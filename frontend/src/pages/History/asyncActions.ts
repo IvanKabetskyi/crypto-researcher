@@ -1,6 +1,6 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { predictionRequests } from 'core/Gateways/Prediction/requests';
-import { HistoryResponse, HistoryParams } from 'core/Entities/History/types';
+import { predictionRequests } from 'api/requests';
+import { HistoryResponse, HistoryParams } from 'types/history';
 
 export const fetchHistory = createAsyncThunk<HistoryResponse, HistoryParams | undefined>(
     'history/fetchHistory',

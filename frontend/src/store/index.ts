@@ -1,8 +1,8 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import { persistStore, persistReducer } from 'redux-persist';
 import storage from 'redux-persist/lib/storage';
-import signalsReducer from 'pages/Signals/redux';
-import historyReducer from 'pages/History/redux';
+import signalsReducer from 'pages/Signals/slice';
+import historyReducer from 'pages/History/slice';
 
 const rootReducer = combineReducers({
     signals: signalsReducer,

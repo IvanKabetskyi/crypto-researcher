@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Box, Typography, Grid, CircularProgress, Alert, Snackbar } from '@mui/material';
-import { useSignalsActions } from './hooks/useSignalsActions';
-import { useStateSignals } from './hooks/useStateSignals';
-import { PredictionCard } from './components/PredictionCard';
-import { SignalForm } from './components/SignalForm';
+import { useSignalsActions } from './useSignalsActions';
+import { useStateSignals } from './useStateSignals';
+import { PredictionCard } from './PredictionCard';
+import { SignalForm } from './SignalForm';
 
 export const Signals = () => {
     const { runAnalysis } = useSignalsActions();

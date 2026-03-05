@@ -1,6 +1,6 @@
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from 'store/types';
-import { runAnalysis } from '../redux/asyncActions';
+import { runAnalysis } from './asyncActions';
 
 export const useSignalsActions = () => {
     const dispatch = useDispatch<AppDispatch>();

@@ -1,7 +1,7 @@
-import apiClient from 'services/api';
-import { transformPredictionResponse, transformHistoryResponse } from './mappers';
-import { Prediction } from 'core/Entities/Prediction/types';
-import { HistoryResponse, HistoryParams } from 'core/Entities/History/types';
+import apiClient from 'api/client';
+import { transformPredictionResponse, transformHistoryResponse } from 'api/mappers';
+import { Prediction } from 'types/prediction';
+import { HistoryResponse, HistoryParams } from 'types/history';
 
 export const predictionRequests = {
     triggerAnalysis: async (params: {

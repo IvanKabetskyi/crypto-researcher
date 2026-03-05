@@ -2,8 +2,8 @@ import React from 'react';
 import { Card, CardContent, Typography, Box, Chip, Divider } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import { Prediction } from 'core/Entities/Prediction/types';
-import { ConfidenceBadge } from '../ConfidenceBadge';
+import { Prediction } from 'types/prediction';
+import { ConfidenceBadge } from './ConfidenceBadge';
 
 interface PredictionCardProps {
     prediction: Prediction;

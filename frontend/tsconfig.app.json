@@ -9,19 +9,11 @@
         "skipLibCheck": true,
         "baseUrl": "src",
         "paths": {
-            "components/*": ["components/*"],
+            "api/*": ["api/*"],
             "pages/*": ["pages/*"],
             "store": ["store"],
             "store/*": ["store/*"],
-            "core/*": ["core/*"],
-            "services/*": ["services/*"],
-            "hooks/*": ["hooks/*"],
-            "config/*": ["config/*"],
-            "constants/*": ["constants/*"],
-            "types/*": ["types/*"],
-            "utils/*": ["utils/*"],
-            "widgets/*": ["widgets/*"],
-            "router/*": ["router/*"]
+            "types/*": ["types/*"]
         },
 
         "moduleResolution": "bundler",

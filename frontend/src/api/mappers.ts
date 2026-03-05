@@ -1,5 +1,5 @@
-import { Prediction } from 'core/Entities/Prediction/types';
-import { HistoryResponse } from 'core/Entities/History/types';
+import { Prediction } from 'types/prediction';
+import { HistoryResponse } from 'types/history';
 
 interface PredictionApiResponse {
     id: string;

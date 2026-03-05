@@ -3,9 +3,9 @@ import { PersistGate } from 'redux-persist/integration/react';
 import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box } from '@mui/material';
 import { store, persistor } from 'store';
-import { theme } from 'config/theme';
-import { AppRouter } from 'router';
-import { NavigationBar } from 'components/common/NavigationBar';
+import { theme } from './theme';
+import { AppRouter } from './Router';
+import { NavigationBar } from './NavigationBar';
 
 function App() {
     return (

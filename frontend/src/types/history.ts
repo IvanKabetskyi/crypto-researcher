@@ -1,4 +1,4 @@
-import { Prediction } from 'core/Entities/Prediction/types';
+import { Prediction } from 'types/prediction';
 
 export interface HistoryResponse {
     items: Prediction[];

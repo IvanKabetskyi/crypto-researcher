@@ -1,5 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { Prediction } from 'core/Entities/Prediction/types';
+import { Prediction } from 'types/prediction';
 import { runAnalysis } from './asyncActions';
 
 interface SignalsState {
