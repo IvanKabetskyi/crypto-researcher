@@ -7,6 +7,13 @@ use crate::application::usecases::run_analysis::run_analysis_use_case;
 pub async fn trigger_analysis(body: Json<AnalyzeParams>) -> HttpResponse {
     let params = body.into_inner();
     tracing::info!("Manual analysis triggered from frontend: pairs={:?}, timeframe={}", params.pairs, params.timeframe);
-    let predictions = run_analysis_use_case(params).await;
-    HttpResponse::Ok().json(predictions)
+    match run_analysis_use_case(params).await {
+        Ok(predictions) => HttpResponse::Ok().json(predictions),
+        Err(e) => {
+            tracing::error!("Analysis failed: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Analysis failed: {}", e)
+            }))
+        }
+    }
 }

@@ -24,7 +24,9 @@ pub fn start_scheduler(interval_secs: u64) {
                 timeframe: "1h".to_string(),
                 min_confidence: 70.0,
             };
-            run_analysis_use_case(params).await;
+            if let Err(e) = run_analysis_use_case(params).await {
+                tracing::error!("Scheduled analysis failed: {}", e);
+            }
 
             check_past_predictions().await;
         }

@@ -18,7 +18,9 @@ fn map_timeframe_to_interval(timeframe: &str) -> &str {
     }
 }
 
-pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> {
+pub async fn run_analysis_use_case(
+    params: AnalyzeParams,
+) -> Result<Vec<PredictionDto>, String> {
     let symbols = params.pairs;
     let timeframe = &params.timeframe;
     let min_confidence = params.min_confidence;
@@ -28,24 +30,18 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> 
 
     let bybit_service = BybitService::new();
     let news_service = CryptoRssService::new();
-    let ollama_service = AIService::new();
+    let ai_service = AIService::new();
 
     // Fetch tickers
-    let tickers = match bybit_service.fetch_tickers(&symbols).await {
-        Ok(t) => {
-            tracing::info!("Fetched {} tickers from Bybit", t.len());
-            t
-        }
-        Err(e) => {
-            tracing::error!("Failed to fetch tickers from Bybit: {}", e);
-            return vec![];
-        }
-    };
+    let tickers = bybit_service
+        .fetch_tickers(&symbols)
+        .await
+        .map_err(|e| format!("Failed to fetch tickers: {}", e))?;
 
     if tickers.is_empty() {
-        tracing::error!("No tickers returned from Bybit - check pair names");
-        return vec![];
+        return Err("No tickers returned from Bybit - check pair names".into());
     }
+    tracing::info!("Fetched {} tickers from Bybit", tickers.len());
 
     // Fetch klines
     let mut klines = std::collections::HashMap::new();
@@ -85,21 +81,16 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> 
     let snapshot = MarketSnapshot::new(tickers, klines, news);
 
     // Call AI for analysis
-    let raw_predictions = match ollama_service.analyze(&snapshot, timeframe).await {
-        Ok(preds) => {
-            tracing::info!("AI returned {} predictions", preds.len());
-            preds
-        }
-        Err(e) => {
-            tracing::error!("AI analysis failed: {}", e);
-            return vec![];
-        }
-    };
+    let raw_predictions = ai_service
+        .analyze(&snapshot, timeframe)
+        .await
+        .map_err(|e| format!("AI analysis failed: {}", e))?;
 
     if raw_predictions.is_empty() {
-        tracing::warn!("AI returned 0 predictions");
-        return vec![];
+        return Err("AI returned 0 predictions".into());
     }
+
+    tracing::info!("AI returned {} predictions", raw_predictions.len());
 
     // Filter by confidence
     let filtered: Vec<_> = raw_predictions
@@ -139,5 +130,5 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> 
         }
     }
 
-    saved_dtos
+    Ok(saved_dtos)
 }
