@@ -115,10 +115,21 @@ impl AIService {
             4. MOMENTUM & CANDLE PATTERNS:\n\
             - Look for: consecutive green/red candles, wicks (rejection), body size vs wick ratio.\n\
             - Long upper wicks at highs = bearish rejection. Long lower wicks at lows = bullish rejection.\n\n\
-            5. NEWS IMPACT:\n\
-            - Only factor in news if it is directly relevant and recent.\n\
-            - Negative regulatory or hack news = strong bearish bias.\n\
-            - Generic positive/neutral news = minimal weight.\n\n\
+            5. NEWS, MACRO & MARKET CONTEXT (IMPORTANT — weigh heavily):\n\
+            - READ every news headline carefully. News drives crypto more than technicals.\n\
+            - Regulatory news (SEC actions, country bans/approvals, ETF decisions) = MAJOR impact. \
+              Negative regulatory news should override bullish technical signals.\n\
+            - Exchange hacks, depegs, project failures = strong bearish, reduce confidence for affected coins.\n\
+            - Whale movements, large transfers to exchanges = bearish pressure signal.\n\
+            - Positive adoption news (institutional buying, partnerships, network upgrades) = bullish catalyst.\n\
+            - Fed/macro news (rate decisions, inflation data, banking crisis) affects ALL crypto — \
+              factor this into every prediction, not just BTC.\n\
+            - Bitcoin dominance shift: if BTC is pumping, altcoins often lag or dump — adjust altcoin \
+              predictions accordingly.\n\
+            - Consider the overall market sentiment: is the market in fear or greed mode based on \
+              the price action and news tone? Fear = more likely to drop further, Greed = more likely to continue up.\n\
+            - If news sentiment strongly contradicts the technical setup, side with news and lower confidence.\n\
+            - In your reasoning, ALWAYS mention relevant news and how it affects your prediction.\n\n\
             CRITICAL RULES FOR ACCURACY:\n\
             - NEVER predict against the prevailing trend on short timeframes (5min, 30min, 1h) \
               unless you see a clear reversal pattern with volume confirmation.\n\
