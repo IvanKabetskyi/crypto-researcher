@@ -10,11 +10,13 @@ impl AnalysisService {
         timeframe: &str,
     ) -> String {
         format!(
-            "Analyze this crypto data and give predictions for timeframe: {}.\n\
-            Tickers: {}\n\
-            Candles: {}\n\
-            News: {}\n\
-            Return JSON: {{\"predictions\":[{{\"symbol\":\"BTCUSDT\",\"direction\":\"long\",\"confidence\":75,\"reasoning\":\"brief\",\"entry_price\":100000,\"target_price\":101000,\"stop_loss\":99000}}]}}",
+            "Analyze the following cryptocurrency market data for the {} timeframe and provide trading signals.\n\n\
+            === CURRENT TICKER DATA (24h stats, prices, volumes) ===\n{}\n\n\
+            === RECENT CANDLESTICK DATA (OHLCV) ===\n{}\n\n\
+            === LATEST NEWS & SENTIMENT ===\n{}\n\n\
+            For each symbol, determine the strongest directional signal based on the data above. \
+            Focus on actionable setups with clear entry, target, and stop-loss levels. \
+            Explain your reasoning with specific references to the data provided.",
             timeframe, tickers_json, klines_json, news_json
         )
     }

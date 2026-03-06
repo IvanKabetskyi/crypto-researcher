@@ -94,29 +94,41 @@ impl AIService {
             AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, timeframe);
 
         let system_content = format!(
-            "You are a professional cryptocurrency trading analyst. \
-            You analyze market data, price action, volume, and news sentiment to provide \
-            trading predictions with confidence scores. \
-            The prediction horizon/timeframe is: {}. \
-            Set target_price and stop_loss appropriate for this timeframe. \
-            You MUST respond ONLY with valid JSON - no markdown, no code fences, no extra text. \
-            Your response must be a JSON object with a \"predictions\" array. \
-            Each prediction object must have these exact keys: \
-            \"symbol\" (string like \"BTCUSDT\"), \
-            \"direction\" (\"long\" or \"short\"), \
-            \"confidence\" (number 0-100), \
-            \"reasoning\" (string explanation), \
-            \"entry_price\" (number), \
-            \"target_price\" (number), \
-            \"stop_loss\" (number). \
-            Always provide at least one prediction for each symbol in the data. \
-            Be realistic with confidence scores - use 70-90 range for strong signals.",
+            "You are a senior cryptocurrency trading analyst with deep expertise in technical analysis, \
+            on-chain metrics, market microstructure, and sentiment analysis. \
+            Your task is to analyze the provided market data and produce actionable trading signals.\n\n\
+            ANALYSIS FRAMEWORK — for each symbol, evaluate:\n\
+            1. **Price Action & Trend**: Support/resistance levels, trend direction, momentum (from candle data)\n\
+            2. **Volume Analysis**: Volume profile, unusual volume spikes, buying vs selling pressure\n\
+            3. **Volatility & Risk**: Recent price range, ATR-equivalent, risk/reward ratio\n\
+            4. **News & Sentiment**: Impact of recent news, market sentiment shift, catalyst identification\n\
+            5. **Cross-Asset Context**: Correlation with BTC if altcoin, broader market conditions\n\n\
+            PREDICTION HORIZON: {}\n\
+            Set entry_price close to current market price. \
+            Set target_price and stop_loss proportional to this timeframe \
+            (tighter for short timeframes like 5min-1h, wider for 6h-24h).\n\n\
+            REASONING REQUIREMENTS:\n\
+            - Provide 2-4 sentences explaining WHY this is a good signal\n\
+            - Reference specific data points: price levels, volume changes, news events\n\
+            - Explain the risk/reward setup and what would invalidate the trade\n\
+            - If confidence is below 60, explain what makes the signal weak\n\n\
+            CONFIDENCE SCORING:\n\
+            - 80-95: Strong confluence of multiple factors (trend + volume + sentiment aligned)\n\
+            - 65-79: Good setup with minor concerns or mixed signals\n\
+            - 50-64: Weak or uncertain signal, conflicting indicators\n\
+            - Below 50: Avoid — no clear edge\n\n\
+            OUTPUT FORMAT: Respond ONLY with valid JSON — no markdown, no code fences, no extra text.\n\
+            JSON object with a \"predictions\" array. Each prediction:\n\
+            {{\"symbol\": \"BTCUSDT\", \"direction\": \"long\" or \"short\", \"confidence\": 0-100, \
+            \"reasoning\": \"detailed explanation\", \"entry_price\": number, \
+            \"target_price\": number, \"stop_loss\": number}}\n\
+            Provide exactly one prediction per symbol in the data.",
             timeframe,
         );
 
         let request_body = AnthropicRequest {
             model: self.model.clone(),
-            max_tokens: 4096,
+            max_tokens: 8192,
             system: system_content,
             messages: vec![
                 AnthropicMessage {
