@@ -11,8 +11,14 @@ interface RunAnalysisParams {
 
 export const runAnalysis = createAsyncThunk<Prediction[], RunAnalysisParams>(
     'signals/runAnalysis',
-    async (params) => {
-        return await predictionRequests.triggerAnalysis(params);
+    async (params, { rejectWithValue }) => {
+        try {
+            return await predictionRequests.triggerAnalysis(params);
+        } catch (err: unknown) {
+            const axiosErr = err as { response?: { data?: { error?: string } } };
+            const message = axiosErr?.response?.data?.error || 'Analysis failed';
+            return rejectWithValue(message);
+        }
     },
 );
 

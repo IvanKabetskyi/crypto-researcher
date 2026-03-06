@@ -37,7 +37,7 @@ const signalsSlice = createSlice({
             })
             .addCase(runAnalysis.rejected, (state, action) => {
                 state.analyzing = false;
-                state.error = action.error.message || 'Analysis failed';
+                state.error = (action.payload as string) || action.error.message || 'Analysis failed';
             })
             .addCase(fetchConfig.fulfilled, (state, action) => {
                 state.availablePairs = action.payload.pairs;

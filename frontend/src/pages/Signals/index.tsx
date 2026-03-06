@@ -37,10 +37,13 @@ export const Signals = () => {
                 message: 'Analysis complete!',
                 severity: 'success',
             });
-        } catch {
+        } catch (err: unknown) {
+            const msg = (err as { message?: string })?.message
+                || String(err)
+                || 'Analysis failed';
             setSnackbar({
                 open: true,
-                message: 'Analysis failed. Check your API keys.',
+                message: msg,
                 severity: 'error',
             });
         }
