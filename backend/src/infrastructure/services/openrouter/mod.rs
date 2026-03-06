@@ -8,6 +8,7 @@ use crate::domain::prediction::services::AnalysisService;
 struct AnthropicRequest {
     model: String,
     max_tokens: u32,
+    temperature: f32,
     system: String,
     messages: Vec<AnthropicMessage>,
 }
@@ -91,11 +92,18 @@ impl AIService {
         let request_body = AnthropicRequest {
             model: model.to_string(),
             max_tokens,
+            temperature: 0.0,
             system: system.to_string(),
-            messages: vec![AnthropicMessage {
-                role: "user".into(),
-                content: user_content.to_string(),
-            }],
+            messages: vec![
+                AnthropicMessage {
+                    role: "user".into(),
+                    content: user_content.to_string(),
+                },
+                AnthropicMessage {
+                    role: "assistant".into(),
+                    content: "{\"predictions\":[".to_string(),
+                },
+            ],
         };
 
         let url = format!("{}/v1/messages", self.base_url);
@@ -142,8 +150,21 @@ impl AIService {
             .trim_end_matches("```")
             .trim();
 
-        let response: AiPredictionResponse = serde_json::from_str(cleaned)
-            .map_err(|e| format!("JSON parse error: {}. Content: {}", e, &cleaned[..cleaned.len().min(300)]))?;
+        // The assistant message is prefilled with {"predictions":[ so the response
+        // continues from there. Prepend the prefix back to form valid JSON.
+        let full_json = if cleaned.starts_with('{') || cleaned.starts_with("[{") {
+            // If it already looks like full JSON or the model repeated the prefix
+            if cleaned.starts_with("{\"predictions\"") {
+                cleaned.to_string()
+            } else {
+                format!("{{\"predictions\":[{}", cleaned)
+            }
+        } else {
+            cleaned.to_string()
+        };
+
+        let response: AiPredictionResponse = serde_json::from_str(&full_json)
+            .map_err(|e| format!("JSON parse error: {}. Content: {}", e, &full_json[..full_json.len().min(300)]))?;
 
         Ok(response.predictions.unwrap_or_default())
     }
