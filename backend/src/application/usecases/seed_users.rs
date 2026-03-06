@@ -19,6 +19,10 @@ const SEED_USERS: &[SeedUser] = &[
         email: "krivonosroman1@gmail.com",
         password: "CryptoRes2026!",
     },
+    SeedUser {
+        email: "Prison11235813@gmail.com",
+        password: "CryptoRes2026!",
+    },
 ];
 
 pub async fn seed_users() {
