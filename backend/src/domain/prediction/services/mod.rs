@@ -10,13 +10,17 @@ impl AnalysisService {
         timeframe: &str,
     ) -> String {
         format!(
-            "Analyze the following cryptocurrency market data for the {} timeframe and provide trading signals.\n\n\
-            === CURRENT TICKER DATA (24h stats, prices, volumes) ===\n{}\n\n\
-            === RECENT CANDLESTICK DATA (OHLCV) ===\n{}\n\n\
-            === LATEST NEWS & SENTIMENT ===\n{}\n\n\
-            For each symbol, determine the strongest directional signal based on the data above. \
-            Focus on actionable setups with clear entry, target, and stop-loss levels. \
-            Explain your reasoning with specific references to the data provided.",
+            "Timeframe: {}\n\n\
+            === CURRENT PRICES (24h stats) ===\n\
+            Fields: symbol, price (current), change_24h (percent as decimal, e.g. -0.02 = -2%), volume (24h USD), high (24h), low (24h)\n\
+            {}\n\n\
+            === CANDLESTICK HISTORY (oldest to newest, OHLCV) ===\n\
+            Fields: o=open, h=high, l=low, c=close, v=volume, t=timestamp(ms)\n\
+            {}\n\n\
+            === RECENT NEWS ===\n\
+            {}\n\n\
+            Analyze each symbol's trend, momentum, support/resistance from the candle data. \
+            Follow the system instructions strictly. Be conservative — accuracy matters more than conviction.",
             timeframe, tickers_json, klines_json, news_json
         )
     }

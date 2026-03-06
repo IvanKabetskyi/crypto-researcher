@@ -50,7 +50,15 @@ pub async fn run_analysis_use_case(params: AnalyzeParams) -> Vec<PredictionDto> 
     // Fetch klines
     let mut klines = std::collections::HashMap::new();
     for symbol in &symbols {
-        match bybit_service.fetch_klines(symbol, kline_interval, 3).await {
+        let kline_limit = match timeframe.as_str() {
+            "5min" | "30min" => 50,
+            "1h" => 48,
+            "6h" => 28,
+            "12h" => 20,
+            "24h" => 14,
+            _ => 30,
+        };
+        match bybit_service.fetch_klines(symbol, kline_interval, kline_limit).await {
             Ok(symbol_klines) => {
                 tracing::info!("Fetched {} klines for {}", symbol_klines.len(), symbol);
                 klines.insert(symbol.clone(), symbol_klines);
