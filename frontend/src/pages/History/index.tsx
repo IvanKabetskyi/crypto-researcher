@@ -19,10 +19,13 @@ import {
     TextField,
     Button,
     TablePagination,
+    Collapse,
+    IconButton,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useHistoryActions } from './hooks/useHistoryActions';
 import { useStateHistory } from './hooks/useStateHistory';
 import { useSignalsActions } from 'pages/Signals/hooks/useSignalsActions';
@@ -47,6 +50,7 @@ export const History: React.FC = () => {
     const [outcome, setOutcome] = useState<string>('');
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
+    const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
     const buildParams = useCallback(
         (pageOverride?: number): HistoryParams => {
@@ -199,6 +203,7 @@ export const History: React.FC = () => {
                         <Table size="small">
                             <TableHead>
                                 <TableRow>
+                                    <TableCell padding="checkbox" />
                                     <TableCell>Symbol</TableCell>
                                     <TableCell>Direction</TableCell>
                                     <TableCell>Timeframe</TableCell>
@@ -212,37 +217,65 @@ export const History: React.FC = () => {
                             </TableHead>
                             <TableBody>
                                 {items.map((p) => (
-                                    <TableRow key={p.id} hover>
-                                        <TableCell>
-                                            <Typography fontWeight={600}>{p.symbol}</Typography>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                icon={p.direction === 'long' ? <TrendingUpIcon /> : <TrendingDownIcon />}
-                                                label={p.direction.toUpperCase()}
-                                                size="small"
-                                                color={p.direction === 'long' ? 'success' : 'error'}
-                                                variant="outlined"
-                                            />
-                                        </TableCell>
-                                        <TableCell>{p.timeframe || '-'}</TableCell>
-                                        <TableCell>{p.confidence.toFixed(1)}%</TableCell>
-                                        <TableCell>${formatPrice(p.entryPrice)}</TableCell>
-                                        <TableCell>${formatPrice(p.targetPrice)}</TableCell>
-                                        <TableCell>${formatPrice(p.stopLoss)}</TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={p.outcome ?? 'pending'}
-                                                size="small"
-                                                color={outcomeColor(p.outcome)}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant="caption" color="text.secondary">
-                                                {new Date(p.createdAt).toLocaleString()}
-                                            </Typography>
-                                        </TableCell>
-                                    </TableRow>
+                                    <React.Fragment key={p.id}>
+                                        <TableRow
+                                            hover
+                                            sx={{ cursor: 'pointer', '& > *': { borderBottom: expandedRow === p.id ? 'unset' : undefined } }}
+                                            onClick={() => setExpandedRow(expandedRow === p.id ? null : p.id)}
+                                        >
+                                            <TableCell padding="checkbox">
+                                                <IconButton size="small" sx={{
+                                                    transform: expandedRow === p.id ? 'rotate(180deg)' : 'rotate(0deg)',
+                                                    transition: 'transform 0.3s',
+                                                }}>
+                                                    <ExpandMoreIcon fontSize="small" />
+                                                </IconButton>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography fontWeight={600}>{p.symbol}</Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    icon={p.direction === 'long' ? <TrendingUpIcon /> : <TrendingDownIcon />}
+                                                    label={p.direction.toUpperCase()}
+                                                    size="small"
+                                                    color={p.direction === 'long' ? 'success' : 'error'}
+                                                    variant="outlined"
+                                                />
+                                            </TableCell>
+                                            <TableCell>{p.timeframe || '-'}</TableCell>
+                                            <TableCell>{p.confidence.toFixed(1)}%</TableCell>
+                                            <TableCell>${formatPrice(p.entryPrice)}</TableCell>
+                                            <TableCell>${formatPrice(p.targetPrice)}</TableCell>
+                                            <TableCell>${formatPrice(p.stopLoss)}</TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    label={p.outcome ?? 'pending'}
+                                                    size="small"
+                                                    color={outcomeColor(p.outcome)}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {new Date(p.createdAt).toLocaleString()}
+                                                </Typography>
+                                            </TableCell>
+                                        </TableRow>
+                                        <TableRow>
+                                            <TableCell sx={{ py: 0 }} colSpan={10}>
+                                                <Collapse in={expandedRow === p.id} timeout="auto" unmountOnExit>
+                                                    <Box sx={{ py: 2, px: 1 }}>
+                                                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                                            Analysis
+                                                        </Typography>
+                                                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                                                            {p.reasoning || 'No reasoning available.'}
+                                                        </Typography>
+                                                    </Box>
+                                                </Collapse>
+                                            </TableCell>
+                                        </TableRow>
+                                    </React.Fragment>
                                 ))}
                             </TableBody>
                         </Table>

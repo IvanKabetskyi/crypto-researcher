@@ -1,7 +1,8 @@
-import React from 'react';
-import { Card, CardContent, Typography, Box, Chip, Divider } from '@mui/material';
+import React, { useState } from 'react';
+import { Card, CardContent, Typography, Box, Chip, Divider, Collapse, IconButton } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Prediction } from 'types/prediction';
 import { ConfidenceBadge } from '../ConfidenceBadge';
 import { formatPrice } from 'utils/formatting';
@@ -24,6 +25,7 @@ const getOutcomeColor = (outcome: Prediction['outcome']): string => {
 };
 
 export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) => {
+    const [expanded, setExpanded] = useState(false);
     const isLong = prediction.direction === 'long';
     const directionColor = isLong ? '#00e676' : '#ff1744';
 
@@ -32,11 +34,13 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
             sx={{
                 backgroundColor: 'background.paper',
                 transition: 'transform 0.2s, box-shadow 0.2s',
+                cursor: 'pointer',
                 '&:hover': {
                     transform: 'translateY(-2px)',
                     boxShadow: `0 4px 20px rgba(${isLong ? '0, 230, 118' : '255, 23, 68'}, 0.15)`,
                 },
             }}
+            onClick={() => setExpanded(!expanded)}
         >
             <CardContent>
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5}>
@@ -55,7 +59,23 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                             }}
                         />
                     </Box>
-                    <ConfidenceBadge confidence={prediction.confidence} />
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                        <ConfidenceBadge confidence={prediction.confidence} />
+                        <IconButton
+                            size="small"
+                            sx={{
+                                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.3s',
+                                color: 'text.secondary',
+                            }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setExpanded(!expanded);
+                            }}
+                        >
+                            <ExpandMoreIcon />
+                        </IconButton>
+                    </Box>
                 </Box>
 
                 {prediction.timeframe && (
@@ -93,20 +113,32 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
 
                 <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.06)' }} />
 
-                <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical',
-                        mb: 1,
-                    }}
-                >
-                    {prediction.reasoning}
-                </Typography>
+                <Collapse in={!expanded} timeout="auto">
+                    <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            mb: 1,
+                        }}
+                    >
+                        {prediction.reasoning}
+                    </Typography>
+                </Collapse>
+
+                <Collapse in={expanded} timeout="auto">
+                    <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mb: 1, whiteSpace: 'pre-wrap' }}
+                    >
+                        {prediction.reasoning}
+                    </Typography>
+                </Collapse>
 
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                     <Typography variant="caption" color="text.secondary">
