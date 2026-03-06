@@ -39,7 +39,7 @@ struct AiPredictionResponse {
     predictions: Option<Vec<AiPrediction>>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct AiPrediction {
     symbol: Option<String>,
     direction: Option<String>,
@@ -53,6 +53,7 @@ struct AiPrediction {
 pub struct AIService {
     base_url: String,
     model: String,
+    confirmation_model: String,
     api_key: String,
     client: reqwest::Client,
 }
@@ -63,12 +64,15 @@ impl AIService {
             .unwrap_or_else(|_| "https://api.anthropic.com".into());
         let model = std::env::var("AI_MODEL")
             .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
+        let confirmation_model = std::env::var("AI_CONFIRMATION_MODEL")
+            .unwrap_or_else(|_| "claude-haiku-4-5-20251001".into());
         let api_key = std::env::var("AI_API_KEY")
             .unwrap_or_default();
 
         Self {
             base_url,
             model,
+            confirmation_model,
             api_key,
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
@@ -77,23 +81,75 @@ impl AIService {
         }
     }
 
-    pub async fn analyze(
+    async fn call_model(
         &self,
-        snapshot: &MarketSnapshot,
-        timeframe: &str,
-    ) -> Result<Vec<Prediction>, Box<dyn std::error::Error + Send + Sync>> {
-        if self.api_key.is_empty() {
-            return Err("AI_API_KEY not set. Set your Anthropic API key.".into());
+        model: &str,
+        system: &str,
+        user_content: &str,
+        max_tokens: u32,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let request_body = AnthropicRequest {
+            model: model.to_string(),
+            max_tokens,
+            system: system.to_string(),
+            messages: vec![AnthropicMessage {
+                role: "user".into(),
+                content: user_content.to_string(),
+            }],
+        };
+
+        let url = format!("{}/v1/messages", self.base_url);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&request_body)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let body = response.text().await?;
+
+        if !status.is_success() {
+            tracing::error!("{} HTTP {}: {}", model, status, body);
+            return Err(format!("{} returned HTTP {}: {}", model, status, body).into());
         }
 
-        let tickers_json = snapshot.tickers_to_json();
-        let klines_json = snapshot.klines_to_json();
-        let news_json = snapshot.news_to_json();
+        let anthropic_response: AnthropicResponse = serde_json::from_str(&body)
+            .map_err(|e| format!("Failed to parse {} response: {}", model, e))?;
 
-        let user_content =
-            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, timeframe);
+        if let Some(error) = anthropic_response.error {
+            return Err(format!("{} API error: {}", model, error.message).into());
+        }
 
-        let system_content = format!(
+        let content_blocks = anthropic_response.content.unwrap_or_default();
+        let text = content_blocks
+            .first()
+            .and_then(|b| b.text.clone())
+            .ok_or_else(|| format!("Empty response from {}", model))?;
+
+        Ok(text)
+    }
+
+    fn parse_predictions(raw: &str) -> Result<Vec<AiPrediction>, Box<dyn std::error::Error + Send + Sync>> {
+        let cleaned = raw
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        let response: AiPredictionResponse = serde_json::from_str(cleaned)
+            .map_err(|e| format!("JSON parse error: {}. Content: {}", e, &cleaned[..cleaned.len().min(300)]))?;
+
+        Ok(response.predictions.unwrap_or_default())
+    }
+
+    fn build_system_prompt(timeframe: &str) -> String {
+        format!(
             "You are a conservative, risk-averse cryptocurrency trading analyst. \
             Your #1 priority is ACCURACY — it is far better to give a low-confidence neutral signal \
             than to predict a direction that turns out wrong.\n\n\
@@ -156,103 +212,152 @@ impl AIService {
             \"entry_price\": number, \"target_price\": number, \"stop_loss\": number}}]}}\n\
             One prediction per symbol. entry_price = current market price.",
             timeframe = timeframe,
-        );
+        )
+    }
 
-        let request_body = AnthropicRequest {
-            model: self.model.clone(),
-            max_tokens: 8192,
-            system: system_content,
-            messages: vec![
-                AnthropicMessage {
-                    role: String::from("user"),
-                    content: user_content,
-                },
-            ],
-        };
+    fn build_confirmation_prompt(sonnet_predictions_json: &str, timeframe: &str) -> String {
+        format!(
+            "You are an independent cryptocurrency trading analyst performing a SECOND OPINION review.\n\n\
+            Another analyst produced the predictions below for the {timeframe} timeframe. \
+            You have access to the same market data.\n\n\
+            YOUR TASK:\n\
+            - Independently analyze the market data provided.\n\
+            - For each prediction, decide if you AGREE or DISAGREE with the direction.\n\
+            - Provide your own confidence score (0-100) based on YOUR analysis.\n\
+            - If you disagree on direction, set your confidence for the OPPOSITE direction.\n\
+            - Write a brief reasoning (1-2 sentences) explaining your view.\n\n\
+            PREVIOUS ANALYST'S PREDICTIONS:\n{sonnet_predictions_json}\n\n\
+            OUTPUT: Valid JSON only — no markdown, no code fences.\n\
+            {{\"predictions\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long\" or \"short\", \
+            \"confidence\": 0-100, \"reasoning\": \"your independent assessment\"}}]}}\n\
+            One prediction per symbol.",
+            timeframe = timeframe,
+            sonnet_predictions_json = sonnet_predictions_json,
+        )
+    }
 
-        let url = format!("{}/v1/messages", self.base_url);
-
-        tracing::info!("Calling AI model: {} at {}", self.model, self.base_url);
-
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&request_body)
-            .send()
-            .await?;
-
-        let status = response.status();
-        let body = response.text().await?;
-
-        if !status.is_success() {
-            tracing::error!("AI HTTP {}: {}", status, body);
-            return Err(format!("AI returned HTTP {}: {}", status, body).into());
+    pub async fn analyze(
+        &self,
+        snapshot: &MarketSnapshot,
+        timeframe: &str,
+    ) -> Result<Vec<Prediction>, Box<dyn std::error::Error + Send + Sync>> {
+        if self.api_key.is_empty() {
+            return Err("AI_API_KEY not set. Set your Anthropic API key.".into());
         }
 
-        tracing::debug!("AI raw response: {}", &body[..body.len().min(500)]);
+        let tickers_json = snapshot.tickers_to_json();
+        let klines_json = snapshot.klines_to_json();
+        let news_json = snapshot.news_to_json();
 
-        let anthropic_response: AnthropicResponse = match serde_json::from_str(&body) {
-            Ok(r) => r,
+        let user_content =
+            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, timeframe);
+
+        let system_prompt = Self::build_system_prompt(timeframe);
+
+        // Step 1: Primary analysis with Sonnet
+        tracing::info!("Step 1: Calling primary model {} for analysis", self.model);
+        let sonnet_raw = self.call_model(&self.model, &system_prompt, &user_content, 8192).await?;
+        tracing::info!("Sonnet response: {} chars", sonnet_raw.len());
+
+        let sonnet_predictions = Self::parse_predictions(&sonnet_raw)?;
+        if sonnet_predictions.is_empty() {
+            return Err("Sonnet returned 0 predictions".into());
+        }
+        tracing::info!("Sonnet returned {} predictions", sonnet_predictions.len());
+
+        // Step 2: Confirmation with Haiku
+        let sonnet_summary: Vec<serde_json::Value> = sonnet_predictions.iter().map(|p| {
+            serde_json::json!({
+                "symbol": p.symbol,
+                "direction": p.direction,
+                "confidence": p.confidence,
+                "entry_price": p.entry_price,
+                "target_price": p.target_price,
+                "stop_loss": p.stop_loss,
+                "reasoning": p.reasoning,
+            })
+        }).collect();
+        let sonnet_json = serde_json::to_string(&sonnet_summary).unwrap_or_default();
+
+        let confirmation_system = Self::build_confirmation_prompt(&sonnet_json, timeframe);
+
+        tracing::info!("Step 2: Calling confirmation model {} for review", self.confirmation_model);
+        let haiku_result = self.call_model(
+            &self.confirmation_model,
+            &confirmation_system,
+            &user_content,
+            4096,
+        ).await;
+
+        let haiku_predictions = match haiku_result {
+            Ok(raw) => {
+                tracing::info!("Haiku response: {} chars", raw.len());
+                Self::parse_predictions(&raw).unwrap_or_default()
+            }
             Err(e) => {
-                tracing::error!("Failed to parse AI response: {}. Body: {}", e, &body[..body.len().min(500)]);
-                return Err(format!("Failed to parse AI response: {}", e).into());
+                tracing::warn!("Haiku confirmation failed (using Sonnet only): {}", e);
+                vec![]
             }
         };
 
-        if let Some(error) = anthropic_response.error {
-            tracing::error!("AI API error: {}", error.message);
-            return Err(format!("AI API error: {}", error.message).into());
-        }
-
-        let content_blocks = anthropic_response.content.unwrap_or_default();
-        if content_blocks.is_empty() {
-            return Err("No content returned from AI".into());
-        }
-
-        let content = match &content_blocks[0].text {
-            Some(c) => c.clone(),
-            None => return Err("Empty text in AI response".into()),
-        };
-
-        tracing::info!("AI response content length: {} chars", content.len());
-
-        // Clean markdown fences if AI wrapped JSON in ```json ... ```
-        let cleaned = content
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
-
-        let ai_response: AiPredictionResponse = match serde_json::from_str(cleaned) {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("Failed to parse AI predictions JSON: {}. Content: {}", e, &cleaned[..cleaned.len().min(500)]);
-                return Err(format!("Failed to parse AI JSON: {}. Content: {}", e, &cleaned[..cleaned.len().min(300)]).into());
-            }
-        };
-
-        let raw_predictions = ai_response.predictions.unwrap_or_default();
-
-        let predictions: Vec<Prediction> = raw_predictions
+        // Step 3: Merge — adjust confidence based on agreement
+        let predictions: Vec<Prediction> = sonnet_predictions
             .iter()
-            .filter_map(|p| {
-                let symbol = p.symbol.as_deref()?;
-                let direction = p.direction.as_deref()?;
-                let confidence = p.confidence?;
-                let reasoning = p.reasoning.as_deref().unwrap_or("No reasoning provided");
-                let entry_price = p.entry_price?;
-                let target_price = p.target_price?;
-                let stop_loss = p.stop_loss?;
+            .filter_map(|sp| {
+                let symbol = sp.symbol.as_deref()?;
+                let sonnet_dir = sp.direction.as_deref()?;
+                let sonnet_conf = sp.confidence?;
+                let reasoning = sp.reasoning.as_deref().unwrap_or("No reasoning provided");
+                let entry_price = sp.entry_price?;
+                let target_price = sp.target_price?;
+                let stop_loss = sp.stop_loss?;
+
+                // Find Haiku's opinion on the same symbol
+                let haiku_match = haiku_predictions.iter().find(|hp| {
+                    hp.symbol.as_deref() == Some(symbol)
+                });
+
+                let (final_confidence, final_reasoning) = match haiku_match {
+                    Some(hp) => {
+                        let haiku_dir = hp.direction.as_deref().unwrap_or("");
+                        let haiku_conf = hp.confidence.unwrap_or(50.0);
+                        let haiku_reasoning = hp.reasoning.as_deref().unwrap_or("");
+
+                        if haiku_dir == sonnet_dir {
+                            // Both agree on direction — average confidence, slight boost
+                            let merged = (sonnet_conf * 0.6 + haiku_conf * 0.4 + 5.0).min(95.0);
+                            let combined = format!(
+                                "{}\n\n[Confirmed by second analysis: {} | confidence {:.0}%]",
+                                reasoning, haiku_reasoning, haiku_conf
+                            );
+                            tracing::info!("{}: AGREE ({}) Sonnet {:.0}% + Haiku {:.0}% → {:.0}%",
+                                symbol, sonnet_dir, sonnet_conf, haiku_conf, merged);
+                            (merged, combined)
+                        } else {
+                            // Disagree on direction — penalize confidence
+                            let penalty = haiku_conf * 0.3;
+                            let merged = (sonnet_conf - penalty).max(20.0);
+                            let combined = format!(
+                                "{}\n\n[Caution: second analysis disagrees — suggests {} with {:.0}% confidence: {}]",
+                                reasoning, haiku_dir, haiku_conf, haiku_reasoning
+                            );
+                            tracing::info!("{}: DISAGREE Sonnet {}({:.0}%) vs Haiku {}({:.0}%) → {:.0}%",
+                                symbol, sonnet_dir, sonnet_conf, haiku_dir, haiku_conf, merged);
+                            (merged, combined)
+                        }
+                    }
+                    None => {
+                        // Haiku didn't return a prediction for this symbol — use Sonnet as-is
+                        tracing::info!("{}: Haiku no opinion, using Sonnet {:.0}%", symbol, sonnet_conf);
+                        (sonnet_conf, reasoning.to_string())
+                    }
+                };
 
                 Some(Prediction::new(
                     symbol,
-                    direction,
-                    confidence,
-                    reasoning,
+                    sonnet_dir,
+                    final_confidence,
+                    &final_reasoning,
                     entry_price,
                     target_price,
                     stop_loss,
@@ -265,7 +370,7 @@ impl AIService {
             })
             .collect();
 
-        tracing::info!("Parsed {} valid predictions from AI response", predictions.len());
+        tracing::info!("Final merged predictions: {}", predictions.len());
 
         Ok(predictions)
     }
