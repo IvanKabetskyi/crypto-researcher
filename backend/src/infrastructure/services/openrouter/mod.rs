@@ -5,36 +5,33 @@ use crate::domain::prediction::entities::Prediction;
 use crate::domain::prediction::services::AnalysisService;
 
 #[derive(Serialize)]
-struct ChatMessage {
+struct AnthropicRequest {
+    model: String,
+    max_tokens: u32,
+    system: String,
+    messages: Vec<AnthropicMessage>,
+}
+
+#[derive(Serialize)]
+struct AnthropicMessage {
     role: String,
     content: String,
 }
 
-#[derive(Serialize)]
-struct ChatRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
+#[derive(Deserialize, Debug)]
+struct AnthropicResponse {
+    content: Option<Vec<ContentBlock>>,
+    error: Option<AnthropicError>,
 }
 
 #[derive(Deserialize, Debug)]
-struct ChatResponse {
-    choices: Option<Vec<ChatChoice>>,
-    error: Option<ChatError>,
+struct ContentBlock {
+    text: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
-struct ChatError {
+struct AnthropicError {
     message: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct ChatChoice {
-    message: ChatResponseMessage,
-}
-
-#[derive(Deserialize, Debug)]
-struct ChatResponseMessage {
-    content: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -63,9 +60,9 @@ pub struct AIService {
 impl AIService {
     pub fn new() -> Self {
         let base_url = std::env::var("AI_API_URL")
-            .unwrap_or_else(|_| "https://api.groq.com/openai/v1".into());
+            .unwrap_or_else(|_| "https://api.anthropic.com".into());
         let model = std::env::var("AI_MODEL")
-            .unwrap_or_else(|_| "llama-3.3-70b-versatile".into());
+            .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
         let api_key = std::env::var("AI_API_KEY")
             .unwrap_or_default();
 
@@ -86,7 +83,7 @@ impl AIService {
         timeframe: &str,
     ) -> Result<Vec<Prediction>, Box<dyn std::error::Error + Send + Sync>> {
         if self.api_key.is_empty() {
-            return Err("AI_API_KEY not set. Get a free key at https://console.groq.com".into());
+            return Err("AI_API_KEY not set. Set your Anthropic API key.".into());
         }
 
         let tickers_json = snapshot.tickers_to_json();
@@ -117,21 +114,19 @@ impl AIService {
             timeframe,
         );
 
-        let request_body = ChatRequest {
+        let request_body = AnthropicRequest {
             model: self.model.clone(),
+            max_tokens: 4096,
+            system: system_content,
             messages: vec![
-                ChatMessage {
-                    role: String::from("system"),
-                    content: system_content,
-                },
-                ChatMessage {
+                AnthropicMessage {
                     role: String::from("user"),
                     content: user_content,
                 },
             ],
         };
 
-        let url = format!("{}/chat/completions", self.base_url);
+        let url = format!("{}/v1/messages", self.base_url);
 
         tracing::info!("Calling AI model: {} at {}", self.model, self.base_url);
 
@@ -139,7 +134,8 @@ impl AIService {
             .client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
             .json(&request_body)
             .send()
             .await?;
@@ -154,7 +150,7 @@ impl AIService {
 
         tracing::debug!("AI raw response: {}", &body[..body.len().min(500)]);
 
-        let chat_response: ChatResponse = match serde_json::from_str(&body) {
+        let anthropic_response: AnthropicResponse = match serde_json::from_str(&body) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("Failed to parse AI response: {}. Body: {}", e, &body[..body.len().min(500)]);
@@ -162,19 +158,19 @@ impl AIService {
             }
         };
 
-        if let Some(error) = chat_response.error {
+        if let Some(error) = anthropic_response.error {
             tracing::error!("AI API error: {}", error.message);
             return Err(format!("AI API error: {}", error.message).into());
         }
 
-        let choices = chat_response.choices.unwrap_or_default();
-        if choices.is_empty() {
-            return Err("No choices returned from AI".into());
+        let content_blocks = anthropic_response.content.unwrap_or_default();
+        if content_blocks.is_empty() {
+            return Err("No content returned from AI".into());
         }
 
-        let content = match &choices[0].message.content {
+        let content = match &content_blocks[0].text {
             Some(c) => c.clone(),
-            None => return Err("Empty content in AI response".into()),
+            None => return Err("Empty text in AI response".into()),
         };
 
         tracing::info!("AI response content length: {} chars", content.len());
