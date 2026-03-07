@@ -8,10 +8,11 @@ use crate::infrastructure::services::auth::create_token;
 #[post("/api/auth/login")]
 pub async fn login(body: Json<LoginRequest>) -> HttpResponse {
     let params = body.into_inner();
+    let email = params.email.to_lowercase();
 
     let user_repo = UserRepository::new().await;
 
-    let user = match user_repo.find_by_email(&params.email).await {
+    let user = match user_repo.find_by_email(&email).await {
         Ok(Some(u)) => u,
         Ok(None) => {
             return HttpResponse::Unauthorized().json(serde_json::json!({

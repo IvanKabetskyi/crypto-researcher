@@ -337,6 +337,19 @@ impl AIService {
                     hp.symbol.as_deref() == Some(symbol)
                 });
 
+                // Validate target/stop_loss direction
+                let (target_price, stop_loss) = if sonnet_dir == "short" && target_price > entry_price {
+                    // SHORT: target must be below entry, stop above
+                    tracing::warn!("{}: Correcting SHORT target/stop — target was above entry", symbol);
+                    (stop_loss.min(entry_price * 0.995), target_price.max(entry_price * 1.005))
+                } else if sonnet_dir == "long" && target_price < entry_price {
+                    // LONG: target must be above entry, stop below
+                    tracing::warn!("{}: Correcting LONG target/stop — target was below entry", symbol);
+                    (stop_loss.max(entry_price * 1.005), target_price.min(entry_price * 0.995))
+                } else {
+                    (target_price, stop_loss)
+                };
+
                 let (final_confidence, final_reasoning) = match haiku_match {
                     Some(hp) => {
                         let haiku_dir = hp.direction.as_deref().unwrap_or("");

@@ -22,9 +22,16 @@ impl UserRepository {
     }
 
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, DataError> {
+        let pattern = format!(
+            "^{}$",
+            email.replace('.', "\\.").replace('+', "\\+")
+        );
         let result = self
             .collection
-            .find_one(Some(doc! { "email": email }), None)
+            .find_one(
+                Some(doc! { "email": { "$regex": &pattern, "$options": "i" } }),
+                None,
+            )
             .await
             .map_err(|_| DataError::new("failed to find user"))?;
 

@@ -20,7 +20,7 @@ const SEED_USERS: &[SeedUser] = &[
         password: "CryptoRes2026!",
     },
     SeedUser {
-        email: "Prison11235813@gmail.com",
+        email: "prison11235813@gmail.com",
         password: "CryptoRes2026!",
     },
 ];

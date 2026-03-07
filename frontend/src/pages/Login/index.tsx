@@ -17,7 +17,7 @@ export const Login: React.FC = () => {
         setLoading(true);
 
         try {
-            const response = await authRequests.login({ email, password });
+            const response = await authRequests.login({ email: email.toLowerCase(), password });
             localStorage.setItem('token', response.token);
             localStorage.setItem('email', response.email);
             navigate('/');
