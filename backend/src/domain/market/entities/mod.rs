@@ -328,6 +328,65 @@ impl MarketSnapshot {
                 0.0
             };
 
+            // Consecutive candles in same direction (streak from most recent)
+            let mut streak = 0i32;
+            for k in klines.iter().rev() {
+                let is_green = k.get_close() > k.get_open();
+                if streak == 0 {
+                    streak = if is_green { 1 } else { -1 };
+                } else if (streak > 0 && is_green) || (streak < 0 && !is_green) {
+                    streak += if is_green { 1 } else { -1 };
+                } else {
+                    break;
+                }
+            }
+            let streak_dir = if streak > 0 { "green" } else { "red" };
+            let streak_count = streak.unsigned_abs();
+
+            // Distance from SMA20 (overextension indicator)
+            let dist_from_sma20 = if sma20 > 0.0 {
+                ((current_price - sma20) / sma20) * 100.0
+            } else {
+                0.0
+            };
+
+            // Last candle wick analysis (reversal signal)
+            let last_candle = &klines[n - 1];
+            let body = (last_candle.get_close() - last_candle.get_open()).abs();
+            let full_range = last_candle.get_high() - last_candle.get_low();
+            let wick_ratio = if full_range > 0.0 {
+                1.0 - (body / full_range)
+            } else {
+                0.0
+            };
+            // Upper wick vs lower wick
+            let upper_wick = last_candle.get_high()
+                - last_candle.get_close().max(last_candle.get_open());
+            let lower_wick = last_candle.get_close().min(last_candle.get_open())
+                - last_candle.get_low();
+            let last_candle_signal = if wick_ratio > 0.6 && upper_wick > lower_wick * 2.0 {
+                "bearish_rejection" // long upper wick = sellers pushed price down
+            } else if wick_ratio > 0.6 && lower_wick > upper_wick * 2.0 {
+                "bullish_rejection" // long lower wick = buyers pushed price up
+            } else if wick_ratio > 0.7 {
+                "indecision" // doji-like candle
+            } else {
+                "normal"
+            };
+
+            // Exhaustion signal: combines streak + RSI + overextension
+            let exhaustion = if streak_count >= 4 && streak > 0 && rsi > 65.0 && dist_from_sma20 > 1.0 {
+                "BULLISH_EXHAUSTION_likely_reversal_down"
+            } else if streak_count >= 4 && streak < 0 && rsi < 35.0 && dist_from_sma20 < -1.0 {
+                "BEARISH_EXHAUSTION_likely_reversal_up"
+            } else if streak_count >= 3 && streak > 0 && rsi > 60.0 {
+                "bullish_extended_pullback_possible"
+            } else if streak_count >= 3 && streak < 0 && rsi < 40.0 {
+                "bearish_extended_bounce_possible"
+            } else {
+                "none"
+            };
+
             results.push(format!(
                 "{{\"symbol\":\"{symbol}\",\
                 \"sma10\":{sma10:.4},\"sma20\":{sma20:.4},\"sma_trend\":\"{sma_trend}\",\
@@ -337,7 +396,11 @@ impl MarketSnapshot {
                 \"support\":{support:.4},\"resistance\":{resistance:.4},\
                 \"dist_to_support\":\"{dist_to_support:.2}%\",\"dist_to_resistance\":\"{dist_to_resistance:.2}%\",\
                 \"green_candles\":{green},\"red_candles\":{red},\
-                \"price_position\":\"{price_position}\"}}"
+                \"price_position\":\"{price_position}\",\
+                \"consecutive_streak\":\"{streak_count} {streak_dir}\",\
+                \"dist_from_sma20\":\"{dist_from_sma20:+.2}%\",\
+                \"last_candle_signal\":\"{last_candle_signal}\",\
+                \"exhaustion_signal\":\"{exhaustion}\"}}"
             ));
         }
 
