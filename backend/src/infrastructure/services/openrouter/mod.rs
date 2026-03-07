@@ -206,35 +206,36 @@ impl AIService {
             How many green vs red candles? Is this a clear trend or ranging?\n\n\
             2. RSI: Is it overbought, oversold, or neutral? \
             Does RSI agree or diverge from the trend?\n\n\
-            3. REVERSAL DETECTION — THIS IS THE MOST IMPORTANT STEP:\n\
-            Markets move in CYCLES. After every sustained move in one direction, the OPPOSITE move follows. \
-            You MUST check ALL of these reversal signals:\n\
-            a) consecutive_streak: How many candles in a row went the same direction? \
-               The LONGER the streak, the MORE likely a reversal is imminent.\n\
-            b) exhaustion_signal: If it says anything other than 'none', a reversal is likely.\n\
-            c) dist_from_sma_slow: Price stretched far from the mean ALWAYS reverts back.\n\
-            d) RSI extremes: RSI >70 after an uptrend = the UP move is ENDING. RSI <30 after a downtrend = the DOWN move is ENDING.\n\
-            e) momentum_10_candles: A large move over 10 candles means the move has ALREADY happened. \
-               The next move is likely the OPPOSITE direction.\n\
-            f) last_candle_signal: A rejection wick (bearish_rejection after uptrend, bullish_rejection after downtrend) \
-               is a STRONG confirmation that the reversal has started.\n\
-            g) last_3_candles_pattern: Engulfing patterns (bearish_engulfing after uptrend, bullish_engulfing after downtrend) \
-               are the STRONGEST reversal confirmation.\n\
-            h) change_24h from ticker data: If the 24h change is >2%, the daily move may be exhausted.\n\n\
-            If you find 2 or more reversal signals → predict the OPPOSITE direction to the current trend.\n\
-            DO NOT predict continuation of a move that has already been running for many candles.\n\n\
+            3. EXTENDED MOVE CHECK (PAY EXTRA ATTENTION HERE):\n\
+            When a move has been running for many candles, analyze it MORE carefully. \
+            Check these signals — they DON'T automatically mean reversal, but they require deeper analysis:\n\
+            a) consecutive_streak: A long streak means the move is mature. Pay extra attention to whether \
+               it still has momentum or is fading. A long streak alone is not a reversal signal.\n\
+            b) exhaustion_signal: If present, it means the move COULD be ending. \
+               Look for confirmation from other indicators before concluding reversal.\n\
+            c) dist_from_sma_slow: Price far from the mean deserves caution — \
+               but strong trends can stay extended. Check if momentum is still strong.\n\
+            d) RSI extremes: RSI >70 or <30 means the move is stretched. \
+               This is a WARNING to be cautious, not an automatic reversal signal.\n\
+            e) momentum_10_candles: A large move over 10 candles means you need to assess \
+               whether the move is accelerating (continuation likely) or decelerating (reversal possible).\n\
+            f) last_candle_signal: Rejection wicks after an extended move are meaningful reversal clues.\n\
+            g) last_3_candles_pattern: Engulfing patterns after extended moves are strong reversal clues.\n\
+            h) change_24h from ticker data: Large 24h change = be extra careful in your analysis.\n\n\
+            The key point: extended moves need MORE evidence to predict continuation. \
+            Reduce confidence if the move looks mature. But don't automatically predict opposite — \
+            look at the full picture.\n\n\
             4. MOMENTUM: Is the move still fresh (small %) or already extended (large %)? \
-            A move that already happened is NOT a signal to enter — it's a signal the move is DONE.\n\n\
+            Fresh moves with small momentum are better entry points than extended ones.\n\n\
             5. VOLUME: Does volume_ratio confirm the move? Check last_candle_volume_spike — \
-            a HIGH_SPIKE on the last candle is a KEY signal (especially on short timeframes). \
-            Volume spike AGAINST the trend direction = reversal starting.\n\n\
+            a HIGH_SPIKE on the last candle is a KEY signal (especially on short timeframes).\n\n\
             6. CANDLE PATTERNS: Check last_candle_signal AND last_3_candles_pattern. \
-            Engulfing patterns are the strongest reversal signals. Rejection wicks confirm them.\n\n\
+            These patterns are especially important after extended moves.\n\n\
             7. SUPPORT/RESISTANCE: Where is price relative to key levels?\n\n\
             8. NEWS: Any headlines that override the technical picture?\n\n\
             9. CONCLUSION for each symbol: Based on ALL the above, what is the most likely direction \
             for the NEXT {timeframe} candle(s)? \n\
-            KEY QUESTION: Has the current move been going on too long? If YES → predict reversal. \
+            If the move has been extended, explain whether you think it continues or reverses and WHY. \
             Is this a trend-following or mean-reversion setup? \
             How confident are you (low/medium/high)?\n\n\
             Write your analysis as plain text. Be specific — reference actual indicator values.",
