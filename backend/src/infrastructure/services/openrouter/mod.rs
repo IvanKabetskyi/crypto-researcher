@@ -232,9 +232,23 @@ impl AIService {
             6. CANDLE PATTERNS: Check last_candle_signal AND last_3_candles_pattern. \
             These patterns are especially important after extended moves.\n\n\
             7. SUPPORT/RESISTANCE: Where is price relative to key levels?\n\n\
-            8. NEWS: Any headlines that override the technical picture?\n\n\
-            9. CONCLUSION for each symbol: Based on ALL the above, what is the most likely direction \
-            for the NEXT {timeframe} candle(s)? \n\
+            8. ORDER BOOK ANALYSIS:\n\
+            - Check orderbook_ratio (bid_volume / ask_volume).\n\
+            - ratio > 1.2 = buyers dominate, bullish pressure\n\
+            - ratio < 0.8 = sellers dominate, bearish pressure\n\
+            - This shows real-time supply/demand from large traders.\n\n\
+            9. DERIVATIVES SENTIMENT:\n\
+            - funding_rate: Negative funding = shorts pay longs = potential SHORT SQUEEZE (bullish). \
+              Positive funding = longs pay shorts = potential LONG SQUEEZE (bearish).\n\
+            - long_ratio vs short_ratio: Shows market positioning. \
+              When too many traders are on one side, the market often moves AGAINST them.\n\
+            - open_interest: Rising OI with price = trend confirmed. Rising OI against price = reversal building.\n\
+            - Derivatives data often LEADS price — it reveals what smart money is doing.\n\n\
+            10. NEWS: Any headlines that override the technical picture?\n\n\
+            11. CONCLUSION for each symbol: Combine technical indicators AND derivatives data. \n\
+            If technicals and derivatives agree → higher confidence.\n\
+            If they disagree → lower confidence, explain the conflict.\n\
+            What is the most likely direction for the NEXT {timeframe} candle(s)? \n\
             If the move has been extended, explain whether you think it continues or reverses and WHY. \
             Is this a trend-following or mean-reversion setup? \
             How confident are you (low/medium/high)?\n\n\
@@ -318,9 +332,10 @@ impl AIService {
         let klines_json = snapshot.klines_to_json();
         let news_json = snapshot.news_to_json();
         let indicators_json = snapshot.compute_indicators(timeframe);
+        let derivatives_json = snapshot.derivatives_to_json();
 
         let user_content =
-            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, &indicators_json, timeframe);
+            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, &indicators_json, &derivatives_json, timeframe);
 
         // Step 1: Technical analysis (free text — AI thinks through the data first)
         let ta_system = Self::build_technical_analysis_prompt(timeframe);

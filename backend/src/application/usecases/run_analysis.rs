@@ -79,7 +79,21 @@ pub async fn run_analysis_use_case(
         }
     };
 
-    let snapshot = MarketSnapshot::new(tickers, klines, news);
+    // Fetch derivatives data (order book, funding rate, open interest, long/short ratio)
+    let mut derivatives = Vec::new();
+    for symbol in &symbols {
+        match bybit_service.fetch_derivatives_data(symbol).await {
+            Ok(data) => {
+                tracing::info!("Fetched derivatives data for {}", symbol);
+                derivatives.push(data);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch derivatives for {} (continuing without): {}", symbol, e);
+            }
+        }
+    }
+
+    let snapshot = MarketSnapshot::new(tickers, klines, news, derivatives);
 
     // Call AI for analysis
     let raw_predictions = ai_service

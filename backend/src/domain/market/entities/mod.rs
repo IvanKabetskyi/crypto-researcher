@@ -138,10 +138,46 @@ impl NewsArticle {
     }
 }
 
+pub struct DerivativesData {
+    symbol: String,
+    orderbook_ratio: f64,
+    bid_volume: f64,
+    ask_volume: f64,
+    funding_rate: f64,
+    open_interest: f64,
+    long_ratio: f64,
+    short_ratio: f64,
+}
+
+impl DerivativesData {
+    pub fn new(
+        symbol: &str,
+        orderbook_ratio: f64,
+        bid_volume: f64,
+        ask_volume: f64,
+        funding_rate: f64,
+        open_interest: f64,
+        long_ratio: f64,
+        short_ratio: f64,
+    ) -> Self {
+        Self {
+            symbol: symbol.into(),
+            orderbook_ratio,
+            bid_volume,
+            ask_volume,
+            funding_rate,
+            open_interest,
+            long_ratio,
+            short_ratio,
+        }
+    }
+}
+
 pub struct MarketSnapshot {
     tickers: Vec<Ticker>,
     klines: HashMap<String, Vec<Kline>>,
     news: Vec<NewsArticle>,
+    derivatives: Vec<DerivativesData>,
 }
 
 impl MarketSnapshot {
@@ -149,11 +185,13 @@ impl MarketSnapshot {
         tickers: Vec<Ticker>,
         klines: HashMap<String, Vec<Kline>>,
         news: Vec<NewsArticle>,
+        derivatives: Vec<DerivativesData>,
     ) -> Self {
         Self {
             tickers,
             klines,
             news,
+            derivatives,
         }
     }
 
@@ -216,6 +254,46 @@ impl MarketSnapshot {
                     n.get_source().replace('"', "\\\""),
                     sentiment,
                     n.get_published_at()
+                )
+            })
+            .collect();
+        format!("[{}]", entries.join(","))
+    }
+
+    pub fn derivatives_to_json(&self) -> String {
+        let entries: Vec<String> = self
+            .derivatives
+            .iter()
+            .map(|d| {
+                let ob_signal = if d.orderbook_ratio > 1.2 {
+                    "bullish_pressure"
+                } else if d.orderbook_ratio < 0.8 {
+                    "bearish_pressure"
+                } else {
+                    "neutral"
+                };
+
+                let funding_signal = if d.funding_rate < -0.005 {
+                    "short_squeeze_risk"
+                } else if d.funding_rate > 0.005 {
+                    "long_squeeze_risk"
+                } else {
+                    "neutral"
+                };
+
+                format!(
+                    "{{\"symbol\":\"{}\",\
+                    \"orderbook_ratio\":{:.3},\"orderbook_signal\":\"{}\",\
+                    \"bid_volume\":{:.2},\"ask_volume\":{:.2},\
+                    \"funding_rate\":{:.6},\"funding_signal\":\"{}\",\
+                    \"open_interest\":{:.2},\
+                    \"long_ratio\":{:.3},\"short_ratio\":{:.3}}}",
+                    d.symbol,
+                    d.orderbook_ratio, ob_signal,
+                    d.bid_volume, d.ask_volume,
+                    d.funding_rate, funding_signal,
+                    d.open_interest,
+                    d.long_ratio, d.short_ratio,
                 )
             })
             .collect();

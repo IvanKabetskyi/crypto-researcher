@@ -8,6 +8,7 @@ impl AnalysisService {
         klines_json: &str,
         news_json: &str,
         indicators_json: &str,
+        derivatives_json: &str,
         timeframe: &str,
     ) -> String {
         format!(
@@ -18,15 +19,21 @@ impl AnalysisService {
             === PRE-COMPUTED TECHNICAL INDICATORS ===\n\
             These are computed from candle data. Use these as your PRIMARY signals.\n\
             {}\n\n\
+            === DERIVATIVES & ORDER BOOK DATA ===\n\
+            orderbook_ratio = bid_volume / ask_volume (>1.2 = bullish pressure, <0.8 = bearish pressure)\n\
+            funding_rate = perpetual swap funding (negative = shorts pay longs = short squeeze risk, positive = longs pay shorts = long squeeze risk)\n\
+            open_interest = total open derivative contracts\n\
+            long_ratio / short_ratio = market positioning\n\
+            {}\n\n\
             === CANDLESTICK HISTORY (oldest to newest, OHLCV) ===\n\
             Fields: o=open, h=high, l=low, c=close, v=volume, t=timestamp(ms)\n\
             {}\n\n\
             === RECENT NEWS ===\n\
             {}\n\n\
-            Use the pre-computed indicators as your primary analysis input. \
-            Cross-reference with raw candle data only for pattern confirmation. \
+            Use technical indicators AND derivatives/order book data together. \
+            Derivatives data reveals what large traders are doing — it often leads price. \
             Follow the system instructions strictly.",
-            timeframe, tickers_json, indicators_json, klines_json, news_json
+            timeframe, tickers_json, indicators_json, derivatives_json, klines_json, news_json
         )
     }
 
