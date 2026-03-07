@@ -22,7 +22,7 @@ pub fn start_scheduler(interval_secs: u64) {
             let params = AnalyzeParams {
                 pairs: symbols,
                 timeframe: "1h".to_string(),
-                min_confidence: 80.0,
+                min_confidence: 30.0,
             };
             if let Err(e) = run_analysis_use_case(params).await {
                 tracing::error!("Scheduled analysis failed: {}", e);

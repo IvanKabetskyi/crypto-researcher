@@ -171,66 +171,60 @@ impl AIService {
 
     fn build_system_prompt(timeframe: &str) -> String {
         format!(
-            "You are an ultra-conservative cryptocurrency trading analyst. \
-            Your #1 priority is ACCURACY. You would rather miss 10 good trades than take 1 bad trade. \
-            Most of the time, the correct answer is LOW CONFIDENCE because markets are uncertain.\n\n\
+            "You are a cryptocurrency trading analyst. You receive pre-computed technical indicators \
+            and market data. Your job is to INTERPRET these signals and make trading predictions.\n\n\
             PREDICTION HORIZON: {timeframe}\n\n\
-            DEFAULT STANCE: Start every analysis at 40% confidence (uncertain). \
-            Only INCREASE confidence if you find strong, specific evidence. \
-            Most predictions should be 40-60% unless you see exceptional confluence.\n\n\
-            STEP-BY-STEP ANALYSIS (do this for each symbol):\n\n\
-            1. TREND from candle data:\n\
-            - Count the last 20 candles: how many are green vs red?\n\
-            - Are closes making higher highs and higher lows (uptrend) or lower highs and lower lows (downtrend)?\n\
-            - If roughly equal green/red with no clear pattern = RANGING → confidence stays 35-45.\n\
-            - Only a clear trend with 65%+ candles in one direction adds confidence (+10-15).\n\n\
-            2. MOMENTUM — IS THE MOVE ALREADY DONE?\n\
-            - CRITICAL: If price already moved >2% in one direction in the last few hours, \
-              do NOT predict continuation. The move may be exhausted.\n\
-            - After a big move (>3%), expect consolidation or reversal, not continuation.\n\
-            - Look at the LAST 3-5 candles specifically: is momentum accelerating or fading?\n\
-            - Fading momentum (smaller bodies, longer wicks) = reduce confidence by 15-20.\n\n\
-            3. SUPPORT & RESISTANCE:\n\
-            - Find the highest high and lowest low in the candle data.\n\
-            - If price is in the middle of this range = no edge → confidence 35-45.\n\
-            - Only if price is bouncing OFF support (for long) or rejecting AT resistance (for short) \
-              with volume confirmation should confidence be above 60.\n\
-            - Set stop_loss TIGHT: just beyond the nearest candle wick, not at arbitrary levels.\n\n\
-            4. VOLUME — THE TRUTH DETECTOR:\n\
-            - Compare last 5 candles volume to previous 10 candles average.\n\
-            - Declining volume on a move = FAKE MOVE, likely to reverse → confidence -20.\n\
-            - Volume spike at a key level = REAL → confidence +10.\n\
-            - No volume change = no conviction → keep confidence low.\n\n\
-            5. NEWS, MACRO & MARKET CONTEXT:\n\
-            - READ every news headline. News is the #1 driver of crypto.\n\
-            - Regulatory news (SEC, bans, ETFs) = OVERRIDE all technicals.\n\
-            - Exchange hacks, depegs, failures = strong bearish.\n\
-            - Whale movements to exchanges = selling pressure.\n\
-            - Fed/rate/inflation news affects ALL crypto.\n\
-            - If BTC is dumping, do NOT go long on altcoins regardless of their chart.\n\
-            - Fear sentiment + downtrend = more downside likely.\n\
-            - If no significant news = no catalyst to move → confidence stays low.\n\
-            - ALWAYS mention news impact in reasoning.\n\n\
-            ANTI-ERROR RULES (these prevent the most common mistakes):\n\
-            - DO NOT CHASE: If the 24h change is >3% in either direction, the easy money is gone. \
-              Set confidence to 40-50 max unless you see a FRESH reversal setup.\n\
-            - DO NOT FIGHT THE TREND: On timeframes ≤1h, NEVER predict against the clear trend.\n\
-            - DO NOT PREDICT BOUNCES from round numbers unless there is visible buying/selling volume at that level.\n\
-            - DO NOT give >70% confidence unless you have: trend + volume + news all aligned.\n\
-            - WHEN IN DOUBT, default to 40-50% confidence. Being uncertain IS the correct answer most of the time.\n\
-            - After 3+ consecutive candles in one direction, expect a pullback, not continuation.\n\
-            - If the last candle has a very long wick, the NEXT candle often goes the opposite direction.\n\n\
-            TARGET & STOP-LOSS (TIGHT — this is critical for accuracy):\n\
-            - 5min: target 0.1-0.2%, stop 0.1-0.15%\n\
-            - 30min: target 0.15-0.4%, stop 0.1-0.25%\n\
-            - 1h: target 0.2-0.6%, stop 0.15-0.35%\n\
-            - 6h: target 0.4-1.2%, stop 0.25-0.7%\n\
-            - 12h: target 0.8-2.0%, stop 0.4-1.0%\n\
-            - 24h: target 1.0-3.0%, stop 0.6-1.5%\n\
-            Risk/reward MUST be at least 1.5:1. If you can't find it, set confidence below 45.\n\n\
-            REASONING: 3-5 sentences. Reference SPECIFIC prices and candle patterns. \
-            State what evidence raised your confidence above 40% baseline. \
-            State what would invalidate the trade.\n\n\
+            HOW TO USE THE PRE-COMPUTED INDICATORS:\n\n\
+            1. TREND (sma_trend + price_position):\n\
+            - sma_trend='bullish' + price above both SMAs = UPTREND → favor long\n\
+            - sma_trend='bearish' + price below both SMAs = DOWNTREND → favor short\n\
+            - price between SMAs = TRANSITION, be cautious\n\
+            - NEVER go against a clear trend on timeframes ≤1h\n\n\
+            2. RSI (rsi_14):\n\
+            - RSI > 70 = OVERBOUGHT → high chance of pullback, avoid new longs\n\
+            - RSI < 30 = OVERSOLD → high chance of bounce, avoid new shorts\n\
+            - RSI 40-60 = neutral, rely more on trend\n\
+            - RSI diverging from trend = WARNING, reduce confidence\n\n\
+            3. MOMENTUM (momentum_5_candles, momentum_10_candles):\n\
+            - Positive momentum + uptrend = confirms long\n\
+            - Negative momentum + downtrend = confirms short\n\
+            - Momentum > +3% or < -3% = move may be exhausted, be cautious about continuation\n\
+            - Momentum reversing direction = potential trend change\n\n\
+            4. VOLUME (volume_ratio):\n\
+            - volume_ratio > 1.3 = increasing volume, CONFIRMS current move\n\
+            - volume_ratio < 0.7 = declining volume, current move is WEAK\n\
+            - volume_ratio near 1.0 = no change in conviction\n\n\
+            5. SUPPORT/RESISTANCE (support, resistance, dist_to_support, dist_to_resistance):\n\
+            - Price near support (dist < 0.5%) + RSI oversold = strong long signal\n\
+            - Price near resistance (dist < 0.5%) + RSI overbought = strong short signal\n\
+            - Set stop_loss just beyond support (for longs) or resistance (for shorts)\n\
+            - Set target_price at the opposite level\n\n\
+            6. GREEN/RED CANDLES:\n\
+            - 65%+ green = uptrend confirmed\n\
+            - 65%+ red = downtrend confirmed\n\
+            - Close to 50/50 = ranging, low confidence\n\n\
+            7. NEWS:\n\
+            - Regulatory news OVERRIDES technicals\n\
+            - Major negative news (hacks, bans) = bearish regardless of chart\n\
+            - If BTC is down, do NOT go long on altcoins\n\
+            - No significant news = rely on technicals only\n\n\
+            CONFIDENCE SCORING:\n\
+            - 30-45: Weak signal, one indicator suggests direction but others are neutral\n\
+            - 45-60: Moderate, 2-3 indicators align\n\
+            - 60-75: Strong, trend + RSI + volume + momentum all align\n\
+            - 75-85: Very strong, all indicators + supportive news\n\
+            - Above 85: Exceptional — almost never appropriate\n\n\
+            TARGET & STOP-LOSS:\n\
+            - Use the provided support/resistance levels\n\
+            - 5min: target 0.1-0.3%, stop 0.1-0.2%\n\
+            - 30min: target 0.2-0.5%, stop 0.15-0.3%\n\
+            - 1h: target 0.3-0.8%, stop 0.2-0.4%\n\
+            - 6h: target 0.5-1.5%, stop 0.3-0.8%\n\
+            - 12h: target 1.0-2.5%, stop 0.5-1.2%\n\
+            - 24h: target 1.5-4.0%, stop 0.8-2.0%\n\
+            Risk/reward must be at least 1.5:1.\n\n\
+            REASONING: 3-5 sentences. Reference the specific indicator values (RSI, SMA, momentum %). \
+            State which indicators support the direction and which are neutral/against.\n\n\
             OUTPUT: Valid JSON only — no markdown, no code fences.\n\
             {{\"predictions\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long\" or \"short\", \
             \"confidence\": 0-100, \"reasoning\": \"detailed\", \
@@ -273,9 +267,10 @@ impl AIService {
         let tickers_json = snapshot.tickers_to_json();
         let klines_json = snapshot.klines_to_json();
         let news_json = snapshot.news_to_json();
+        let indicators_json = snapshot.compute_indicators();
 
         let user_content =
-            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, timeframe);
+            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, &indicators_json, timeframe);
 
         let system_prompt = Self::build_system_prompt(timeframe);
 
@@ -348,30 +343,29 @@ impl AIService {
                         let haiku_conf = hp.confidence.unwrap_or(50.0);
                         let haiku_reasoning = hp.reasoning.as_deref().unwrap_or("");
 
-                        if haiku_dir == sonnet_dir {
-                            // Both agree — use the LOWER confidence (conservative)
-                            let merged = sonnet_conf.min(haiku_conf);
-                            let combined = format!(
-                                "{}\n\n[Confirmed by second analysis: {} | confidence {:.0}%]",
-                                reasoning, haiku_reasoning, haiku_conf
+                        if haiku_dir != sonnet_dir {
+                            // Models DISAGREE on direction — skip entirely
+                            tracing::info!(
+                                "{}: SKIPPED — Sonnet says {}({:.0}%) but Haiku says {}({:.0}%)",
+                                symbol, sonnet_dir, sonnet_conf, haiku_dir, haiku_conf
                             );
-                            tracing::info!("{}: AGREE ({}) Sonnet {:.0}% + Haiku {:.0}% → {:.0}%",
-                                symbol, sonnet_dir, sonnet_conf, haiku_conf, merged);
-                            (merged, combined)
-                        } else {
-                            // Disagree on direction — HARD penalty, cap at 40%
-                            let merged = (sonnet_conf * 0.4).min(40.0);
-                            let combined = format!(
-                                "{}\n\n[WARNING: second analysis DISAGREES — suggests {} with {:.0}% confidence: {}]",
-                                reasoning, haiku_dir, haiku_conf, haiku_reasoning
-                            );
-                            tracing::info!("{}: DISAGREE Sonnet {}({:.0}%) vs Haiku {}({:.0}%) → {:.0}%",
-                                symbol, sonnet_dir, sonnet_conf, haiku_dir, haiku_conf, merged);
-                            (merged, combined)
+                            return None;
                         }
+
+                        // Both AGREE — use average confidence
+                        let merged = (sonnet_conf + haiku_conf) / 2.0;
+                        let combined = format!(
+                            "{}\n\n[Confirmed by second analysis ({:.0}%): {}]",
+                            reasoning, haiku_conf, haiku_reasoning
+                        );
+                        tracing::info!(
+                            "{}: AGREE ({}) Sonnet {:.0}% + Haiku {:.0}% → avg {:.0}%",
+                            symbol, sonnet_dir, sonnet_conf, haiku_conf, merged
+                        );
+                        (merged, combined)
                     }
                     None => {
-                        // Haiku didn't return a prediction for this symbol — use Sonnet as-is
+                        // Haiku didn't return opinion — use Sonnet as-is
                         tracing::info!("{}: Haiku no opinion, using Sonnet {:.0}%", symbol, sonnet_conf);
                         (sonnet_conf, reasoning.to_string())
                     }

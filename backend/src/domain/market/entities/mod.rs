@@ -221,4 +221,165 @@ impl MarketSnapshot {
             .collect();
         format!("[{}]", entries.join(","))
     }
+
+    pub fn compute_indicators(&self) -> String {
+        let mut results = Vec::new();
+
+        for (symbol, klines) in &self.klines {
+            if klines.len() < 5 {
+                continue;
+            }
+
+            let closes: Vec<f64> = klines.iter().map(|k| k.get_close()).collect();
+            let highs: Vec<f64> = klines.iter().map(|k| k.get_high()).collect();
+            let lows: Vec<f64> = klines.iter().map(|k| k.get_low()).collect();
+            let volumes: Vec<f64> = klines.iter().map(|k| k.get_volume()).collect();
+            let n = closes.len();
+            let current_price = closes[n - 1];
+
+            // SMA 10
+            let sma10 = if n >= 10 {
+                closes[n - 10..].iter().sum::<f64>() / 10.0
+            } else {
+                closes.iter().sum::<f64>() / n as f64
+            };
+
+            // SMA 20
+            let sma20 = if n >= 20 {
+                closes[n - 20..].iter().sum::<f64>() / 20.0
+            } else {
+                closes.iter().sum::<f64>() / n as f64
+            };
+
+            // RSI 14
+            let rsi = compute_rsi(&closes, 14);
+
+            // Price change over last 5 candles (%)
+            let momentum_5 = if n >= 6 {
+                ((current_price - closes[n - 6]) / closes[n - 6]) * 100.0
+            } else {
+                ((current_price - closes[0]) / closes[0]) * 100.0
+            };
+
+            // Price change over last 10 candles (%)
+            let momentum_10 = if n >= 11 {
+                ((current_price - closes[n - 11]) / closes[n - 11]) * 100.0
+            } else {
+                ((current_price - closes[0]) / closes[0]) * 100.0
+            };
+
+            // Volume trend: avg last 5 candles / avg prior candles
+            let recent_count = n.min(5);
+            let vol_recent: f64 =
+                volumes[n - recent_count..].iter().sum::<f64>() / recent_count as f64;
+
+            let prior_end = if n > 5 { n - 5 } else { 0 };
+            let vol_prior = if prior_end > 0 {
+                volumes[..prior_end].iter().sum::<f64>() / prior_end as f64
+            } else {
+                vol_recent
+            };
+
+            let volume_ratio = if vol_prior > 0.0 {
+                vol_recent / vol_prior
+            } else {
+                1.0
+            };
+
+            // Support (lowest low) and Resistance (highest high)
+            let resistance = highs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let support = lows.iter().cloned().fold(f64::INFINITY, f64::min);
+
+            // Green vs red candle count
+            let count_n = n.min(20);
+            let green = klines[n - count_n..]
+                .iter()
+                .filter(|k| k.get_close() > k.get_open())
+                .count();
+            let red = count_n - green;
+
+            // SMA crossover trend
+            let sma_trend = if sma10 > sma20 {
+                "bullish"
+            } else if sma10 < sma20 {
+                "bearish"
+            } else {
+                "neutral"
+            };
+
+            // Price position relative to SMAs
+            let price_position = if current_price > sma10 && current_price > sma20 {
+                "above_both_SMAs"
+            } else if current_price < sma10 && current_price < sma20 {
+                "below_both_SMAs"
+            } else {
+                "between_SMAs"
+            };
+
+            // Distance to support/resistance as %
+            let dist_to_resistance = if resistance > 0.0 {
+                ((resistance - current_price) / current_price) * 100.0
+            } else {
+                0.0
+            };
+            let dist_to_support = if support > 0.0 {
+                ((current_price - support) / current_price) * 100.0
+            } else {
+                0.0
+            };
+
+            results.push(format!(
+                "{{\"symbol\":\"{symbol}\",\
+                \"sma10\":{sma10:.4},\"sma20\":{sma20:.4},\"sma_trend\":\"{sma_trend}\",\
+                \"rsi_14\":{rsi:.1},\
+                \"momentum_5_candles\":\"{momentum_5:+.2}%\",\"momentum_10_candles\":\"{momentum_10:+.2}%\",\
+                \"volume_ratio\":{volume_ratio:.2},\
+                \"support\":{support:.4},\"resistance\":{resistance:.4},\
+                \"dist_to_support\":\"{dist_to_support:.2}%\",\"dist_to_resistance\":\"{dist_to_resistance:.2}%\",\
+                \"green_candles\":{green},\"red_candles\":{red},\
+                \"price_position\":\"{price_position}\"}}"
+            ));
+        }
+
+        format!("[{}]", results.join(","))
+    }
+}
+
+fn compute_rsi(closes: &[f64], period: usize) -> f64 {
+    if closes.len() <= period {
+        return 50.0;
+    }
+
+    let mut avg_gain = 0.0;
+    let mut avg_loss = 0.0;
+
+    for i in 1..=period {
+        let change = closes[i] - closes[i - 1];
+        if change > 0.0 {
+            avg_gain += change;
+        } else {
+            avg_loss += change.abs();
+        }
+    }
+    avg_gain /= period as f64;
+    avg_loss /= period as f64;
+
+    // Wilder's smoothing for remaining data points
+    for i in (period + 1)..closes.len() {
+        let change = closes[i] - closes[i - 1];
+        if change > 0.0 {
+            avg_gain = (avg_gain * (period as f64 - 1.0) + change) / period as f64;
+            avg_loss = (avg_loss * (period as f64 - 1.0)) / period as f64;
+        } else {
+            avg_gain = (avg_gain * (period as f64 - 1.0)) / period as f64;
+            avg_loss = (avg_loss * (period as f64 - 1.0) + change.abs()) / period as f64;
+        }
+    }
+
+    if avg_loss == 0.0 {
+        return 100.0;
+    }
+
+    let rs = avg_gain / avg_loss;
+    100.0 - (100.0 / (1.0 + rs))
 }

@@ -43,7 +43,7 @@ export const SignalForm: React.FC<SignalFormProps> = ({
             setInitialized(true);
         }
     }, [availablePairs, availableTimeframes, initialized]);
-    const [minConfidence, setMinConfidence] = React.useState(70);
+    const [minConfidence, setMinConfidence] = React.useState(30);
 
     const togglePair = (pair: string) => {
         setSelectedPairs((prev) =>
