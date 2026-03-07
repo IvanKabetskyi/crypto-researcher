@@ -171,62 +171,66 @@ impl AIService {
 
     fn build_system_prompt(timeframe: &str) -> String {
         format!(
-            "You are a conservative, risk-averse cryptocurrency trading analyst. \
-            Your #1 priority is ACCURACY — it is far better to give a low-confidence neutral signal \
-            than to predict a direction that turns out wrong.\n\n\
+            "You are an ultra-conservative cryptocurrency trading analyst. \
+            Your #1 priority is ACCURACY. You would rather miss 10 good trades than take 1 bad trade. \
+            Most of the time, the correct answer is LOW CONFIDENCE because markets are uncertain.\n\n\
             PREDICTION HORIZON: {timeframe}\n\n\
-            STEP-BY-STEP ANALYSIS (do this internally for each symbol before deciding):\n\n\
-            1. TREND IDENTIFICATION from candle data:\n\
-            - Look at the last 10-20 candles. Are closes consistently rising, falling, or ranging?\n\
-            - Identify the dominant trend direction. Do NOT predict against the trend unless there is \
-              an extremely strong reversal signal (double bottom/top, massive volume spike at support/resistance).\n\
-            - If price is choppy/ranging with no clear direction, set confidence below 50.\n\n\
-            2. SUPPORT & RESISTANCE:\n\
-            - Identify key levels from recent highs and lows in the candle data.\n\
-            - If price is near resistance, be cautious about long. If near support, be cautious about short.\n\
-            - Set stop_loss just beyond the nearest support (for long) or resistance (for short).\n\
-            - Set target_price at the next logical level, NOT an arbitrary percentage.\n\n\
-            3. VOLUME CONFIRMATION:\n\
-            - A move with increasing volume is more reliable than one with declining volume.\n\
-            - If recent candles show declining volume, reduce confidence by 10-15 points.\n\n\
-            4. MOMENTUM & CANDLE PATTERNS:\n\
-            - Look for: consecutive green/red candles, wicks (rejection), body size vs wick ratio.\n\
-            - Long upper wicks at highs = bearish rejection. Long lower wicks at lows = bullish rejection.\n\n\
-            5. NEWS, MACRO & MARKET CONTEXT (IMPORTANT — weigh heavily):\n\
-            - READ every news headline carefully. News drives crypto more than technicals.\n\
-            - Regulatory news (SEC actions, country bans/approvals, ETF decisions) = MAJOR impact. \
-              Negative regulatory news should override bullish technical signals.\n\
-            - Exchange hacks, depegs, project failures = strong bearish, reduce confidence for affected coins.\n\
-            - Whale movements, large transfers to exchanges = bearish pressure signal.\n\
-            - Positive adoption news (institutional buying, partnerships, network upgrades) = bullish catalyst.\n\
-            - Fed/macro news (rate decisions, inflation data, banking crisis) affects ALL crypto — \
-              factor this into every prediction, not just BTC.\n\
-            - Bitcoin dominance shift: if BTC is pumping, altcoins often lag or dump — adjust altcoin \
-              predictions accordingly.\n\
-            - Consider the overall market sentiment: is the market in fear or greed mode based on \
-              the price action and news tone? Fear = more likely to drop further, Greed = more likely to continue up.\n\
-            - If news sentiment strongly contradicts the technical setup, side with news and lower confidence.\n\
-            - In your reasoning, ALWAYS mention relevant news and how it affects your prediction.\n\n\
-            CRITICAL RULES FOR ACCURACY:\n\
-            - NEVER predict against the prevailing trend on short timeframes (5min, 30min, 1h) \
-              unless you see a clear reversal pattern with volume confirmation.\n\
-            - If the 24h change is strongly negative (>3% drop) and candles show continued selling, \
-              prefer SHORT or low-confidence signals. Do not call a bottom without evidence.\n\
-            - If the 24h change is strongly positive (>3% gain) and candles show continued buying, \
-              prefer LONG. Do not call a top without evidence.\n\
-            - If price is in a tight range with no momentum, set confidence to 40-55 (weak/neutral).\n\
-            - Risk/reward ratio must be at least 1.5:1. If you cannot find a setup with this ratio, \
-              set confidence below 50.\n\n\
-            TARGET & STOP-LOSS SIZING by timeframe:\n\
-            - 5min: target 0.1-0.3% from entry, stop 0.1-0.2%\n\
-            - 30min: target 0.2-0.5% from entry, stop 0.15-0.3%\n\
-            - 1h: target 0.3-1.0% from entry, stop 0.2-0.5%\n\
-            - 6h: target 0.5-2.0% from entry, stop 0.3-1.0%\n\
-            - 12h: target 1.0-3.0% from entry, stop 0.5-1.5%\n\
-            - 24h: target 1.5-5.0% from entry, stop 1.0-2.5%\n\n\
-            REASONING: Write 3-5 sentences. Reference specific prices, candle patterns, \
-            volume behavior, and support/resistance levels from the data. \
-            Explain what confirms your direction AND what would invalidate it.\n\n\
+            DEFAULT STANCE: Start every analysis at 40% confidence (uncertain). \
+            Only INCREASE confidence if you find strong, specific evidence. \
+            Most predictions should be 40-60% unless you see exceptional confluence.\n\n\
+            STEP-BY-STEP ANALYSIS (do this for each symbol):\n\n\
+            1. TREND from candle data:\n\
+            - Count the last 20 candles: how many are green vs red?\n\
+            - Are closes making higher highs and higher lows (uptrend) or lower highs and lower lows (downtrend)?\n\
+            - If roughly equal green/red with no clear pattern = RANGING → confidence stays 35-45.\n\
+            - Only a clear trend with 65%+ candles in one direction adds confidence (+10-15).\n\n\
+            2. MOMENTUM — IS THE MOVE ALREADY DONE?\n\
+            - CRITICAL: If price already moved >2% in one direction in the last few hours, \
+              do NOT predict continuation. The move may be exhausted.\n\
+            - After a big move (>3%), expect consolidation or reversal, not continuation.\n\
+            - Look at the LAST 3-5 candles specifically: is momentum accelerating or fading?\n\
+            - Fading momentum (smaller bodies, longer wicks) = reduce confidence by 15-20.\n\n\
+            3. SUPPORT & RESISTANCE:\n\
+            - Find the highest high and lowest low in the candle data.\n\
+            - If price is in the middle of this range = no edge → confidence 35-45.\n\
+            - Only if price is bouncing OFF support (for long) or rejecting AT resistance (for short) \
+              with volume confirmation should confidence be above 60.\n\
+            - Set stop_loss TIGHT: just beyond the nearest candle wick, not at arbitrary levels.\n\n\
+            4. VOLUME — THE TRUTH DETECTOR:\n\
+            - Compare last 5 candles volume to previous 10 candles average.\n\
+            - Declining volume on a move = FAKE MOVE, likely to reverse → confidence -20.\n\
+            - Volume spike at a key level = REAL → confidence +10.\n\
+            - No volume change = no conviction → keep confidence low.\n\n\
+            5. NEWS, MACRO & MARKET CONTEXT:\n\
+            - READ every news headline. News is the #1 driver of crypto.\n\
+            - Regulatory news (SEC, bans, ETFs) = OVERRIDE all technicals.\n\
+            - Exchange hacks, depegs, failures = strong bearish.\n\
+            - Whale movements to exchanges = selling pressure.\n\
+            - Fed/rate/inflation news affects ALL crypto.\n\
+            - If BTC is dumping, do NOT go long on altcoins regardless of their chart.\n\
+            - Fear sentiment + downtrend = more downside likely.\n\
+            - If no significant news = no catalyst to move → confidence stays low.\n\
+            - ALWAYS mention news impact in reasoning.\n\n\
+            ANTI-ERROR RULES (these prevent the most common mistakes):\n\
+            - DO NOT CHASE: If the 24h change is >3% in either direction, the easy money is gone. \
+              Set confidence to 40-50 max unless you see a FRESH reversal setup.\n\
+            - DO NOT FIGHT THE TREND: On timeframes ≤1h, NEVER predict against the clear trend.\n\
+            - DO NOT PREDICT BOUNCES from round numbers unless there is visible buying/selling volume at that level.\n\
+            - DO NOT give >70% confidence unless you have: trend + volume + news all aligned.\n\
+            - WHEN IN DOUBT, default to 40-50% confidence. Being uncertain IS the correct answer most of the time.\n\
+            - After 3+ consecutive candles in one direction, expect a pullback, not continuation.\n\
+            - If the last candle has a very long wick, the NEXT candle often goes the opposite direction.\n\n\
+            TARGET & STOP-LOSS (TIGHT — this is critical for accuracy):\n\
+            - 5min: target 0.1-0.2%, stop 0.1-0.15%\n\
+            - 30min: target 0.15-0.4%, stop 0.1-0.25%\n\
+            - 1h: target 0.2-0.6%, stop 0.15-0.35%\n\
+            - 6h: target 0.4-1.2%, stop 0.25-0.7%\n\
+            - 12h: target 0.8-2.0%, stop 0.4-1.0%\n\
+            - 24h: target 1.0-3.0%, stop 0.6-1.5%\n\
+            Risk/reward MUST be at least 1.5:1. If you can't find it, set confidence below 45.\n\n\
+            REASONING: 3-5 sentences. Reference SPECIFIC prices and candle patterns. \
+            State what evidence raised your confidence above 40% baseline. \
+            State what would invalidate the trade.\n\n\
             OUTPUT: Valid JSON only — no markdown, no code fences.\n\
             {{\"predictions\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long\" or \"short\", \
             \"confidence\": 0-100, \"reasoning\": \"detailed\", \
@@ -345,8 +349,8 @@ impl AIService {
                         let haiku_reasoning = hp.reasoning.as_deref().unwrap_or("");
 
                         if haiku_dir == sonnet_dir {
-                            // Both agree on direction — average confidence, slight boost
-                            let merged = (sonnet_conf * 0.6 + haiku_conf * 0.4 + 5.0).min(95.0);
+                            // Both agree — use the LOWER confidence (conservative)
+                            let merged = sonnet_conf.min(haiku_conf);
                             let combined = format!(
                                 "{}\n\n[Confirmed by second analysis: {} | confidence {:.0}%]",
                                 reasoning, haiku_reasoning, haiku_conf
@@ -355,11 +359,10 @@ impl AIService {
                                 symbol, sonnet_dir, sonnet_conf, haiku_conf, merged);
                             (merged, combined)
                         } else {
-                            // Disagree on direction — penalize confidence
-                            let penalty = haiku_conf * 0.3;
-                            let merged = (sonnet_conf - penalty).max(20.0);
+                            // Disagree on direction — HARD penalty, cap at 40%
+                            let merged = (sonnet_conf * 0.4).min(40.0);
                             let combined = format!(
-                                "{}\n\n[Caution: second analysis disagrees — suggests {} with {:.0}% confidence: {}]",
+                                "{}\n\n[WARNING: second analysis DISAGREES — suggests {} with {:.0}% confidence: {}]",
                                 reasoning, haiku_dir, haiku_conf, haiku_reasoning
                             );
                             tracing::info!("{}: DISAGREE Sonnet {}({:.0}%) vs Haiku {}({:.0}%) → {:.0}%",
