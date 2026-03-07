@@ -222,7 +222,20 @@ impl MarketSnapshot {
         format!("[{}]", entries.join(","))
     }
 
-    pub fn compute_indicators(&self) -> String {
+    pub fn compute_indicators(&self, timeframe: &str) -> String {
+        // Timeframe-aware thresholds
+        // Shorter timeframes: streaks are common, need more candles to signal exhaustion
+        // Longer timeframes: each candle covers hours/days, fewer needed
+        let (streak_warn, streak_exhaust, momentum_threshold, sma_dist_threshold) = match timeframe {
+            "5min"  => (6u32, 8u32, 1.0f64, 0.3f64),
+            "30min" => (5, 7, 1.5, 0.5),
+            "1h"    => (4, 6, 2.0, 1.0),
+            "6h"    => (3, 4, 2.5, 1.5),
+            "12h"   => (2, 3, 3.0, 2.0),
+            "24h"   => (2, 3, 4.0, 2.5),
+            _       => (4, 6, 2.0, 1.0),
+        };
+
         let mut results = Vec::new();
 
         for (symbol, klines) in &self.klines {
@@ -374,15 +387,17 @@ impl MarketSnapshot {
                 "normal"
             };
 
-            // Exhaustion signal: combines streak + RSI + overextension
-            let exhaustion = if streak_count >= 4 && streak > 0 && rsi > 65.0 && dist_from_sma20 > 1.0 {
+            // Exhaustion signal: combines streak + RSI + overextension (timeframe-aware)
+            let exhaustion = if streak_count >= streak_exhaust && streak > 0 && rsi > 65.0 && dist_from_sma20.abs() > sma_dist_threshold {
                 "BULLISH_EXHAUSTION_likely_reversal_down"
-            } else if streak_count >= 4 && streak < 0 && rsi < 35.0 && dist_from_sma20 < -1.0 {
+            } else if streak_count >= streak_exhaust && streak < 0 && rsi < 35.0 && dist_from_sma20.abs() > sma_dist_threshold {
                 "BEARISH_EXHAUSTION_likely_reversal_up"
-            } else if streak_count >= 3 && streak > 0 && rsi > 60.0 {
+            } else if streak_count >= streak_warn && streak > 0 && rsi > 55.0 {
                 "bullish_extended_pullback_possible"
-            } else if streak_count >= 3 && streak < 0 && rsi < 40.0 {
+            } else if streak_count >= streak_warn && streak < 0 && rsi < 45.0 {
                 "bearish_extended_bounce_possible"
+            } else if momentum_5.abs() > momentum_threshold && streak_count >= streak_warn {
+                if momentum_5 > 0.0 { "momentum_overextended_up" } else { "momentum_overextended_down" }
             } else {
                 "none"
             };

@@ -282,7 +282,7 @@ impl AIService {
         let tickers_json = snapshot.tickers_to_json();
         let klines_json = snapshot.klines_to_json();
         let news_json = snapshot.news_to_json();
-        let indicators_json = snapshot.compute_indicators();
+        let indicators_json = snapshot.compute_indicators(timeframe);
 
         let user_content =
             AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, &indicators_json, timeframe);
