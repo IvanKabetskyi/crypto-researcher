@@ -226,14 +226,16 @@ impl MarketSnapshot {
         // Timeframe-aware thresholds
         // Shorter timeframes: streaks are common, need more candles to signal exhaustion
         // Longer timeframes: each candle covers hours/days, fewer needed
-        let (streak_warn, streak_exhaust, momentum_threshold, sma_dist_threshold) = match timeframe {
-            "5min"  => (6u32, 8u32, 1.0f64, 0.3f64),
-            "30min" => (5, 7, 1.5, 0.5),
-            "1h"    => (4, 6, 2.0, 1.0),
-            "6h"    => (3, 4, 2.5, 1.5),
-            "12h"   => (2, 3, 3.0, 2.0),
-            "24h"   => (2, 3, 4.0, 2.5),
-            _       => (4, 6, 2.0, 1.0),
+        // Timeframe-adaptive parameters
+        // (streak_warn, streak_exhaust, momentum_threshold, sma_dist_threshold, sma_fast, sma_slow, rsi_period)
+        let (streak_warn, streak_exhaust, momentum_threshold, sma_dist_threshold, sma_fast, sma_slow, rsi_period) = match timeframe {
+            "5min"  => (6u32, 8u32, 0.5f64, 0.15f64, 5usize, 13usize, 9usize),
+            "30min" => (5, 7, 1.0, 0.3, 7, 15, 10),
+            "1h"    => (4, 6, 2.0, 1.0, 10, 20, 14),
+            "6h"    => (3, 4, 2.5, 1.5, 10, 20, 14),
+            "12h"   => (2, 3, 3.0, 2.0, 10, 20, 14),
+            "24h"   => (2, 3, 4.0, 2.5, 10, 20, 14),
+            _       => (4, 6, 2.0, 1.0, 10, 20, 14),
         };
 
         let mut results = Vec::new();
@@ -250,22 +252,22 @@ impl MarketSnapshot {
             let n = closes.len();
             let current_price = closes[n - 1];
 
-            // SMA 10
-            let sma10 = if n >= 10 {
-                closes[n - 10..].iter().sum::<f64>() / 10.0
+            // Fast SMA (timeframe-adaptive period)
+            let sma10 = if n >= sma_fast {
+                closes[n - sma_fast..].iter().sum::<f64>() / sma_fast as f64
             } else {
                 closes.iter().sum::<f64>() / n as f64
             };
 
-            // SMA 20
-            let sma20 = if n >= 20 {
-                closes[n - 20..].iter().sum::<f64>() / 20.0
+            // Slow SMA (timeframe-adaptive period)
+            let sma20 = if n >= sma_slow {
+                closes[n - sma_slow..].iter().sum::<f64>() / sma_slow as f64
             } else {
                 closes.iter().sum::<f64>() / n as f64
             };
 
-            // RSI 14
-            let rsi = compute_rsi(&closes, 14);
+            // RSI (timeframe-adaptive period)
+            let rsi = compute_rsi(&closes, rsi_period);
 
             // Price change over last 5 candles (%)
             let momentum_5 = if n >= 6 {
@@ -402,19 +404,74 @@ impl MarketSnapshot {
                 "none"
             };
 
+            // Last 3 candles pattern (important for short timeframes)
+            let last3_pattern = if n >= 3 {
+                let c1 = &klines[n - 3]; // oldest of the 3
+                let c2 = &klines[n - 2];
+                let c3 = &klines[n - 1]; // most recent
+
+                let c1_bull = c1.get_close() > c1.get_open();
+                let c2_bull = c2.get_close() > c2.get_open();
+                let c3_bull = c3.get_close() > c3.get_open();
+
+                let c3_body = (c3.get_close() - c3.get_open()).abs();
+                let c2_body = (c2.get_close() - c2.get_open()).abs();
+
+                if !c2_bull && c3_bull && c3_body > c2_body * 1.5 {
+                    "bullish_engulfing" // strong buy signal
+                } else if c2_bull && !c3_bull && c3_body > c2_body * 1.5 {
+                    "bearish_engulfing" // strong sell signal
+                } else if c1_bull && c2_bull && c3_bull {
+                    "three_green_soldiers"
+                } else if !c1_bull && !c2_bull && !c3_bull {
+                    "three_red_crows"
+                } else if c1_bull && !c2_bull && c3_bull && c3.get_close() > c1.get_close() {
+                    "bullish_recovery"
+                } else if !c1_bull && c2_bull && !c3_bull && c3.get_close() < c1.get_close() {
+                    "bearish_rejection_pattern"
+                } else {
+                    "mixed"
+                }
+            } else {
+                "insufficient_data"
+            };
+
+            // Volume spike on last candle (important for short timeframes)
+            let vol_spike = if n >= 2 {
+                let last_vol = volumes[n - 1];
+                let avg_vol = if n >= 6 {
+                    volumes[n - 6..n - 1].iter().sum::<f64>() / 5.0
+                } else {
+                    volumes[..n - 1].iter().sum::<f64>() / (n - 1) as f64
+                };
+                if avg_vol > 0.0 { last_vol / avg_vol } else { 1.0 }
+            } else {
+                1.0
+            };
+            let vol_spike_label = if vol_spike > 2.0 {
+                "HIGH_SPIKE"
+            } else if vol_spike > 1.5 {
+                "moderate_spike"
+            } else if vol_spike < 0.5 {
+                "very_low"
+            } else {
+                "normal"
+            };
+
             results.push(format!(
                 "{{\"symbol\":\"{symbol}\",\
-                \"sma10\":{sma10:.4},\"sma20\":{sma20:.4},\"sma_trend\":\"{sma_trend}\",\
-                \"rsi_14\":{rsi:.1},\
+                \"sma_fast({sma_fast})\":{sma10:.4},\"sma_slow({sma_slow})\":{sma20:.4},\"sma_trend\":\"{sma_trend}\",\
+                \"rsi({rsi_period})\":{rsi:.1},\
                 \"momentum_5_candles\":\"{momentum_5:+.2}%\",\"momentum_10_candles\":\"{momentum_10:+.2}%\",\
-                \"volume_ratio\":{volume_ratio:.2},\
+                \"volume_ratio\":{volume_ratio:.2},\"last_candle_volume_spike\":\"{vol_spike_label}({vol_spike:.1}x)\",\
                 \"support\":{support:.4},\"resistance\":{resistance:.4},\
                 \"dist_to_support\":\"{dist_to_support:.2}%\",\"dist_to_resistance\":\"{dist_to_resistance:.2}%\",\
                 \"green_candles\":{green},\"red_candles\":{red},\
                 \"price_position\":\"{price_position}\",\
                 \"consecutive_streak\":\"{streak_count} {streak_dir}\",\
-                \"dist_from_sma20\":\"{dist_from_sma20:+.2}%\",\
+                \"dist_from_sma_slow\":\"{dist_from_sma20:+.2}%\",\
                 \"last_candle_signal\":\"{last_candle_signal}\",\
+                \"last_3_candles_pattern\":\"{last3_pattern}\",\
                 \"exhaustion_signal\":\"{exhaustion}\"}}"
             ));
         }

@@ -47,7 +47,8 @@ pub async fn run_analysis_use_case(
     let mut klines = std::collections::HashMap::new();
     for symbol in &symbols {
         let kline_limit = match timeframe.as_str() {
-            "5min" | "30min" => 50,
+            "5min" => 80,  // ~6.5 hours, enough for fast SMA 5/13 + RSI 9
+            "30min" => 60, // ~30 hours
             "1h" => 48,
             "6h" => 28,
             "12h" => 20,

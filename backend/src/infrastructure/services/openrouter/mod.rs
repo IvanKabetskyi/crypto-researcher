@@ -174,38 +174,72 @@ impl AIService {
     }
 
     fn build_technical_analysis_prompt(timeframe: &str) -> String {
+        let timeframe_guidance = match timeframe {
+            "5min" => "\
+            IMPORTANT — 5-MINUTE SCALPING RULES:\n\
+            - 5min candles are NOISY. Do NOT trust weak signals.\n\
+            - Focus on the LAST 3 CANDLES (last_3_candles_pattern) — engulfing patterns are the strongest signals.\n\
+            - SMA periods are shorter (5/13) to react faster — but still check if price is clearly above or below both.\n\
+            - RSI uses period 9 for faster signals. On 5min, RSI >65 already indicates overbought, RSI <35 = oversold.\n\
+            - Volume spikes (last_candle_volume_spike) are CRITICAL on 5min — a spike signals institutional activity.\n\
+            - Only high-confidence setups work on 5min: engulfing + volume spike + RSI extreme.\n\
+            - If signals are mixed or unclear, the correct answer is LOW confidence (30-40%).\n\
+            - Targets must be VERY tight: 0.05-0.15%. Anything larger is unrealistic for 5min.\n\n",
+            "30min" => "\
+            30-MINUTE RULES:\n\
+            - SMA periods are 7/15 for moderate responsiveness.\n\
+            - Last 3 candle patterns carry good weight.\n\
+            - Volume spikes on 30min are meaningful — check last_candle_volume_spike.\n\
+            - A move of >1% in last 5 candles (2.5 hours) is already significant.\n\n",
+            _ => "",
+        };
+
         format!(
             "You are a professional cryptocurrency technical analyst. \
             You receive pre-computed technical indicators and raw candle data.\n\n\
             Perform a DETAILED technical analysis for each symbol on the {timeframe} timeframe.\n\n\
+            {timeframe_guidance}\
+            The indicator periods are ALREADY adjusted for the {timeframe} timeframe \
+            (sma_fast/sma_slow labels show the actual periods used).\n\n\
             For EACH symbol, analyze in this exact order:\n\n\
             1. TREND: What does the SMA crossover (sma_trend) say? Is price above or below both SMAs? \
             How many green vs red candles? Is this a clear trend or ranging?\n\n\
-            2. RSI: Is it overbought (>70), oversold (<30), or neutral? \
+            2. RSI: Is it overbought, oversold, or neutral? \
             Does RSI agree or diverge from the trend?\n\n\
             3. EXHAUSTION CHECK (CRITICAL): \
             Look at consecutive_streak — how many candles in a row went the same direction? \
             Look at exhaustion_signal — does it say exhaustion or overextension? \
-            Look at dist_from_sma20 — is price stretched too far from the mean? \
+            Look at dist_from_sma_slow — is price stretched too far from the mean? \
             If ANY exhaustion signal is present, the current trend is likely ENDING. \
             After a prolonged move up, expect a move DOWN. After a prolonged move down, expect a move UP.\n\n\
-            4. MOMENTUM: Is the move still fresh (small momentum %) or already extended (large %)? \
-            A move that already happened is NOT a signal to enter — it's a signal the move may be done.\n\n\
-            5. VOLUME: Does volume_ratio confirm the current move (>1.3) or show weakness (<0.7)?\n\n\
-            6. CANDLE PATTERN: What does last_candle_signal say? \
-            Rejection wicks are strong reversal signals.\n\n\
-            7. SUPPORT/RESISTANCE: Where is price relative to key levels? \
-            Is it near support (potential long) or resistance (potential short)?\n\n\
+            4. MOMENTUM: Is the move still fresh (small %) or already extended (large %)? \
+            A move that already happened is NOT a signal to enter.\n\n\
+            5. VOLUME: Does volume_ratio confirm the move? Check last_candle_volume_spike — \
+            a HIGH_SPIKE on the last candle is a KEY signal (especially on short timeframes).\n\n\
+            6. CANDLE PATTERNS: Check last_candle_signal AND last_3_candles_pattern. \
+            Engulfing patterns and rejection wicks are strong reversal/continuation signals.\n\n\
+            7. SUPPORT/RESISTANCE: Where is price relative to key levels?\n\n\
             8. NEWS: Any headlines that override the technical picture?\n\n\
             9. CONCLUSION for each symbol: Based on ALL the above, what is the most likely direction \
             for the NEXT {timeframe} candle(s)? Is this a trend-following or mean-reversion setup? \
             How confident are you (low/medium/high)?\n\n\
             Write your analysis as plain text. Be specific — reference actual indicator values.",
             timeframe = timeframe,
+            timeframe_guidance = timeframe_guidance,
         )
     }
 
     fn build_prediction_prompt(technical_analysis: &str, timeframe: &str) -> String {
+        let target_guide = match timeframe {
+            "5min"  => "5min SCALP: target 0.05-0.15%, stop 0.05-0.1%. Very tight — small quick moves only.",
+            "30min" => "30min: target 0.15-0.4%, stop 0.1-0.25%.",
+            "1h"    => "1h: target 0.3-0.8%, stop 0.2-0.4%.",
+            "6h"    => "6h: target 0.5-1.5%, stop 0.3-0.8%.",
+            "12h"   => "12h: target 1.0-2.5%, stop 0.5-1.2%.",
+            "24h"   => "24h: target 1.5-4.0%, stop 0.8-2.0%.",
+            _       => "target 0.3-0.8%, stop 0.2-0.4%.",
+        };
+
         format!(
             "You are a cryptocurrency trading analyst. Below is a detailed technical analysis \
             that was just performed on the market data.\n\n\
@@ -219,6 +253,7 @@ impl AIService {
             - For SHORT: target BELOW entry, stop_loss ABOVE entry\n\
             - For LONG: target ABOVE entry, stop_loss BELOW entry\n\
             - Risk/reward must be at least 1.5:1\n\n\
+            TARGET & STOP-LOSS for {timeframe}: {target_guide}\n\n\
             CONFIDENCE based on analysis strength:\n\
             - 30-45: Analysis was uncertain or mixed signals\n\
             - 45-60: Moderate clarity, 2-3 indicators aligned\n\
