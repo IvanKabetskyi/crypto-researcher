@@ -76,7 +76,7 @@ impl AIService {
             confirmation_model,
             api_key,
             client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
+                .timeout(std::time::Duration::from_secs(180))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
         }
@@ -88,22 +88,26 @@ impl AIService {
         system: &str,
         user_content: &str,
         max_tokens: u32,
+        prefill: Option<&str>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let mut messages = vec![AnthropicMessage {
+            role: "user".into(),
+            content: user_content.to_string(),
+        }];
+
+        if let Some(prefix) = prefill {
+            messages.push(AnthropicMessage {
+                role: "assistant".into(),
+                content: prefix.to_string(),
+            });
+        }
+
         let request_body = AnthropicRequest {
             model: model.to_string(),
             max_tokens,
             temperature: 0.0,
             system: system.to_string(),
-            messages: vec![
-                AnthropicMessage {
-                    role: "user".into(),
-                    content: user_content.to_string(),
-                },
-                AnthropicMessage {
-                    role: "assistant".into(),
-                    content: "{\"predictions\":[".to_string(),
-                },
-            ],
+            messages,
         };
 
         let url = format!("{}/v1/messages", self.base_url);
@@ -169,82 +173,63 @@ impl AIService {
         Ok(response.predictions.unwrap_or_default())
     }
 
-    fn build_system_prompt(timeframe: &str) -> String {
+    fn build_technical_analysis_prompt(timeframe: &str) -> String {
         format!(
-            "You are a cryptocurrency trading analyst. You receive pre-computed technical indicators \
-            and market data. Your job is to INTERPRET these signals and make trading predictions.\n\n\
-            PREDICTION HORIZON: {timeframe}\n\n\
-            CRITICAL RULE — EXHAUSTION & MEAN REVERSION (read this FIRST):\n\
-            After an extended move in one direction, the OPPOSITE move becomes more likely.\n\
-            The exhaustion_signal field tells you if this is happening:\n\
-            - 'BULLISH_EXHAUSTION_likely_reversal_down' → predict SHORT, not long. The uptrend is ending.\n\
-            - 'BEARISH_EXHAUSTION_likely_reversal_up' → predict LONG, not short. The downtrend is ending.\n\
-            - 'bullish_extended_pullback_possible' → be cautious about longs, consider short\n\
-            - 'bearish_extended_bounce_possible' → be cautious about shorts, consider long\n\
-            - 'none' → no exhaustion detected, use normal analysis\n\n\
-            The consecutive_streak tells you how many candles in a row went the same direction.\n\
-            - 3+ consecutive candles = pullback/reversal is MORE likely than continuation\n\
-            - 5+ consecutive candles = reversal is VERY likely, predict the opposite direction\n\
-            - NEVER predict continuation after 4+ consecutive candles in the same direction\n\n\
-            The dist_from_sma20 tells you how overextended price is:\n\
-            - > +1.5% = price stretched above average, likely to pull back down\n\
-            - < -1.5% = price stretched below average, likely to bounce up\n\
-            - The further from SMA20, the MORE likely a reversal\n\n\
-            The last_candle_signal shows reversal candle patterns:\n\
-            - 'bearish_rejection' = long upper wick, sellers winning → favor short\n\
-            - 'bullish_rejection' = long lower wick, buyers winning → favor long\n\
-            - 'indecision' = doji-like, trend change possible\n\
-            - 'normal' = no special pattern\n\n\
-            HOW TO USE THE OTHER INDICATORS:\n\n\
-            1. TREND (sma_trend + price_position):\n\
-            - sma_trend='bullish' + price above both SMAs = UPTREND → favor long (unless exhausted)\n\
-            - sma_trend='bearish' + price below both SMAs = DOWNTREND → favor short (unless exhausted)\n\
-            - price between SMAs = TRANSITION, be cautious\n\n\
-            2. RSI (rsi_14):\n\
-            - RSI > 70 = OVERBOUGHT → DO NOT go long, strongly favor short\n\
-            - RSI < 30 = OVERSOLD → DO NOT go short, strongly favor long\n\
-            - RSI 40-60 = neutral, rely more on trend\n\n\
-            3. MOMENTUM (momentum_5_candles, momentum_10_candles):\n\
-            - Momentum > +2% = the upward move may already be DONE, expect pullback\n\
-            - Momentum < -2% = the downward move may already be DONE, expect bounce\n\
-            - Small momentum (±0.5%) + trend alignment = fresh move, good entry\n\n\
-            4. VOLUME (volume_ratio):\n\
-            - volume_ratio > 1.3 = increasing volume, CONFIRMS current move\n\
-            - volume_ratio < 0.7 = declining volume, current move is WEAK and likely to reverse\n\n\
-            5. SUPPORT/RESISTANCE:\n\
-            - Price near support + oversold + exhaustion = STRONG long (reversal)\n\
-            - Price near resistance + overbought + exhaustion = STRONG short (reversal)\n\n\
-            6. NEWS:\n\
-            - Regulatory news OVERRIDES all technicals\n\
-            - If BTC is down, do NOT go long on altcoins\n\n\
-            DECISION PRIORITY (in order):\n\
-            1. Check exhaustion_signal FIRST — if it says reversal, predict the reversal direction\n\
-            2. Check RSI extremes (>70 or <30) — these override trend-following\n\
-            3. Check consecutive_streak — 3+ candles means expect reversal, not continuation\n\
-            4. Check last_candle_signal for rejection patterns\n\
-            5. ONLY THEN consider trend-following with SMA/momentum if no exhaustion signals\n\n\
-            CONFIDENCE SCORING:\n\
-            - 30-45: Weak signal, one indicator suggests direction\n\
-            - 45-60: Moderate, 2-3 indicators align\n\
-            - 60-75: Strong, exhaustion + RSI + candle pattern align for reversal; OR trend + volume + momentum for fresh move\n\
-            - 75-85: Very strong, all signals agree + news confirms\n\n\
-            TARGET & STOP-LOSS:\n\
-            - Use support/resistance levels from the indicators\n\
-            - For REVERSALS: target the SMA20 (mean reversion target)\n\
-            - 5min: target 0.1-0.3%, stop 0.1-0.2%\n\
-            - 30min: target 0.2-0.5%, stop 0.15-0.3%\n\
-            - 1h: target 0.3-0.8%, stop 0.2-0.4%\n\
-            - 6h: target 0.5-1.5%, stop 0.3-0.8%\n\
-            - 12h: target 1.0-2.5%, stop 0.5-1.2%\n\
-            - 24h: target 1.5-4.0%, stop 0.8-2.0%\n\
-            Risk/reward must be at least 1.5:1.\n\n\
-            REASONING: 3-5 sentences. ALWAYS mention the exhaustion_signal value, consecutive_streak, \
-            and RSI. State whether this is a trend-following or mean-reversion trade.\n\n\
+            "You are a professional cryptocurrency technical analyst. \
+            You receive pre-computed technical indicators and raw candle data.\n\n\
+            Perform a DETAILED technical analysis for each symbol on the {timeframe} timeframe.\n\n\
+            For EACH symbol, analyze in this exact order:\n\n\
+            1. TREND: What does the SMA crossover (sma_trend) say? Is price above or below both SMAs? \
+            How many green vs red candles? Is this a clear trend or ranging?\n\n\
+            2. RSI: Is it overbought (>70), oversold (<30), or neutral? \
+            Does RSI agree or diverge from the trend?\n\n\
+            3. EXHAUSTION CHECK (CRITICAL): \
+            Look at consecutive_streak — how many candles in a row went the same direction? \
+            Look at exhaustion_signal — does it say exhaustion or overextension? \
+            Look at dist_from_sma20 — is price stretched too far from the mean? \
+            If ANY exhaustion signal is present, the current trend is likely ENDING. \
+            After a prolonged move up, expect a move DOWN. After a prolonged move down, expect a move UP.\n\n\
+            4. MOMENTUM: Is the move still fresh (small momentum %) or already extended (large %)? \
+            A move that already happened is NOT a signal to enter — it's a signal the move may be done.\n\n\
+            5. VOLUME: Does volume_ratio confirm the current move (>1.3) or show weakness (<0.7)?\n\n\
+            6. CANDLE PATTERN: What does last_candle_signal say? \
+            Rejection wicks are strong reversal signals.\n\n\
+            7. SUPPORT/RESISTANCE: Where is price relative to key levels? \
+            Is it near support (potential long) or resistance (potential short)?\n\n\
+            8. NEWS: Any headlines that override the technical picture?\n\n\
+            9. CONCLUSION for each symbol: Based on ALL the above, what is the most likely direction \
+            for the NEXT {timeframe} candle(s)? Is this a trend-following or mean-reversion setup? \
+            How confident are you (low/medium/high)?\n\n\
+            Write your analysis as plain text. Be specific — reference actual indicator values.",
+            timeframe = timeframe,
+        )
+    }
+
+    fn build_prediction_prompt(technical_analysis: &str, timeframe: &str) -> String {
+        format!(
+            "You are a cryptocurrency trading analyst. Below is a detailed technical analysis \
+            that was just performed on the market data.\n\n\
+            === TECHNICAL ANALYSIS ===\n{technical_analysis}\n\n\
+            Based on this analysis, generate trading predictions for the {timeframe} timeframe.\n\n\
+            RULES:\n\
+            - Your predictions MUST align with the analysis conclusions above\n\
+            - If the analysis found exhaustion/reversal signals, predict the REVERSAL direction\n\
+            - If the analysis found a fresh trend, predict trend continuation\n\
+            - entry_price = current market price from the data\n\
+            - For SHORT: target BELOW entry, stop_loss ABOVE entry\n\
+            - For LONG: target ABOVE entry, stop_loss BELOW entry\n\
+            - Risk/reward must be at least 1.5:1\n\n\
+            CONFIDENCE based on analysis strength:\n\
+            - 30-45: Analysis was uncertain or mixed signals\n\
+            - 45-60: Moderate clarity, 2-3 indicators aligned\n\
+            - 60-75: Strong clarity, most indicators + exhaustion/trend aligned\n\
+            - 75-85: Very strong, everything aligned + news confirmed\n\n\
             OUTPUT: Valid JSON only — no markdown, no code fences.\n\
             {{\"predictions\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long\" or \"short\", \
-            \"confidence\": 0-100, \"reasoning\": \"detailed\", \
+            \"confidence\": 0-100, \"reasoning\": \"summarize the key analysis points\", \
             \"entry_price\": number, \"target_price\": number, \"stop_loss\": number}}]}}\n\
-            One prediction per symbol. entry_price = current market price.",
+            One prediction per symbol.",
+            technical_analysis = technical_analysis,
             timeframe = timeframe,
         )
     }
@@ -287,12 +272,21 @@ impl AIService {
         let user_content =
             AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, &indicators_json, timeframe);
 
-        let system_prompt = Self::build_system_prompt(timeframe);
+        // Step 1: Technical analysis (free text — AI thinks through the data first)
+        let ta_system = Self::build_technical_analysis_prompt(timeframe);
+        tracing::info!("Step 1: Technical analysis with {}", self.model);
+        let technical_analysis = self
+            .call_model(&self.model, &ta_system, &user_content, 4096, None)
+            .await?;
+        tracing::info!("Technical analysis: {} chars", technical_analysis.len());
 
-        // Step 1: Primary analysis with Sonnet
-        tracing::info!("Step 1: Calling primary model {} for analysis", self.model);
-        let sonnet_raw = self.call_model(&self.model, &system_prompt, &user_content, 8192).await?;
-        tracing::info!("Sonnet response: {} chars", sonnet_raw.len());
+        // Step 2: Generate predictions based on the analysis
+        let prediction_system = Self::build_prediction_prompt(&technical_analysis, timeframe);
+        tracing::info!("Step 2: Generating predictions with {}", self.model);
+        let sonnet_raw = self
+            .call_model(&self.model, &prediction_system, &user_content, 4096, Some("{\"predictions\":["))
+            .await?;
+        tracing::info!("Sonnet predictions: {} chars", sonnet_raw.len());
 
         let sonnet_predictions = Self::parse_predictions(&sonnet_raw)?;
         if sonnet_predictions.is_empty() {
@@ -300,7 +294,7 @@ impl AIService {
         }
         tracing::info!("Sonnet returned {} predictions", sonnet_predictions.len());
 
-        // Step 2: Confirmation with Haiku
+        // Step 3: Confirmation with Haiku
         let sonnet_summary: Vec<serde_json::Value> = sonnet_predictions.iter().map(|p| {
             serde_json::json!({
                 "symbol": p.symbol,
@@ -316,12 +310,13 @@ impl AIService {
 
         let confirmation_system = Self::build_confirmation_prompt(&sonnet_json, timeframe);
 
-        tracing::info!("Step 2: Calling confirmation model {} for review", self.confirmation_model);
+        tracing::info!("Step 3: Confirmation with {}", self.confirmation_model);
         let haiku_result = self.call_model(
             &self.confirmation_model,
             &confirmation_system,
             &user_content,
             4096,
+            Some("{\"predictions\":["),
         ).await;
 
         let haiku_predictions = match haiku_result {
