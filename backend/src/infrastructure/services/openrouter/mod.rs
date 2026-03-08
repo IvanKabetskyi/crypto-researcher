@@ -113,6 +113,7 @@ struct ReviewResult {
 struct ReviewVerdict {
     consistency_status: Option<String>,
     final_verdict: Option<String>,
+    final_decision: Option<String>,
     confidence: Option<f64>,
 }
 
@@ -465,20 +466,24 @@ impl AIService {
                optimizer suggests entry while risk manager implies caution\n\
             3. WEAK REASONING: Are conclusions shallow, unsupported, or overconfident?\n\
             4. EXECUTION QUALITY: Is the final plan justified by the analysis?\n\
-            5. FINAL VALIDATION: Should the plan be accepted, accepted with caution, downgraded, or rejected?\n\n\
+            5. FINAL VALIDATION: Should the plan be accepted, accepted with caution, downgraded, or rejected?\n\
+            6. FINAL ADJUDICATION: Always return a final actionable decision — LONG, SHORT, or NO_TRADE.\n\n\
             RULES:\n\
             - Do NOT redo full market analysis from scratch\n\
             - Challenge prior outputs when needed\n\
             - Prefer skepticism over agreement\n\
             - Protect capital and execution quality first\n\
             - If you DOWNGRADE: reduce confidence by 15-25 points\n\
-            - If you REJECT: the trade should not be taken\n\n\
+            - If you REJECT: the trade should not be taken\n\
+            - Do not return only criticism. You must produce a final actionable result.\n\
+            - If prior outputs are weak or conflicting, reduce confidence instead of avoiding a final conclusion.\n\n\
             For each symbol, output your review.\n\
             OUTPUT: Valid JSON only. No markdown, no code fences.\n\
             {{\"reviews\": [{{\"reviewResult\": {{\"consistencyStatus\": \"PASS|WARNING|FAIL\", \
-            \"finalVerdict\": \"ACCEPT|ACCEPT_WITH_CAUTION|DOWNGRADE|REJECT\", \"confidence\": 0-100}}, \
+            \"finalVerdict\": \"ACCEPT|ACCEPT_WITH_CAUTION|DOWNGRADE|REJECT\", \
+            \"finalDecision\": \"LONG|SHORT|NO_TRADE\", \"confidence\": 0-100}}, \
             \"detectedIssues\": [\"issue1\", ...], \"reviewNotes\": [\"note1\", ...], \
-            \"finalApprovedPlan\": {{\"marketBias\": \"bullish|bearish|neutral\", \
+            \"finalApprovedPlan\": {{\"marketBias\": \"LONG|SHORT|NO_TRADE\", \
             \"executionPlan\": \"ENTER_NOW|WAIT_CONFIRMATION|SCALE_IN|REDUCED_SIZE|SKIP_TRADE\", \
             \"setupType\": \"BREAKOUT|MEAN_REVERSION|SQUEEZE|CONTINUATION|NO_SETUP\", \
             \"targets\": {{\"primary\": number, \"secondary\": number}}, \
@@ -722,41 +727,97 @@ impl AIService {
                     Some(rev) => {
                         let verdict = rev.review_result.as_ref();
                         let final_verdict = verdict.and_then(|v| v.final_verdict.as_deref());
+                        let final_decision = verdict.and_then(|v| v.final_decision.as_deref());
                         let rev_confidence = verdict.and_then(|v| v.confidence).unwrap_or(confidence);
 
-                        match final_verdict {
-                            Some("REJECT") => {
-                                tracing::info!("{}: REJECTED by Review AI — skipping", symbol);
+                        // Check finalDecision first (new behavior)
+                        if let Some(decision) = final_decision {
+                            if decision == "NO_TRADE" {
+                                tracing::info!("{}: NO_TRADE by Review AI finalDecision — skipping", symbol);
                                 return None;
                             }
-                            Some("DOWNGRADE") => {
-                                let downgraded = (confidence - 20.0).max(20.0);
+
+                            // Check if review direction conflicts with signal direction
+                            let decision_dir = match decision {
+                                "LONG" => "long",
+                                "SHORT" => "short",
+                                _ => "",
+                            };
+                            if !decision_dir.is_empty() && decision_dir != direction {
                                 tracing::info!(
-                                    "{}: DOWNGRADED by Review AI: {:.0}% → {:.0}%",
-                                    symbol, confidence, downgraded
+                                    "{}: Review AI finalDecision {} conflicts with signal {} — skipping",
+                                    symbol, decision, direction
                                 );
-                                // Override execution to caution
-                                execution_action = Some("REDUCED_SIZE".into());
-                                (downgraded, Some(false), Some(rev_confidence))
+                                return None;
                             }
-                            Some("ACCEPT_WITH_CAUTION") => {
-                                let cautious = (confidence - 10.0).max(25.0);
-                                tracing::info!(
-                                    "{}: ACCEPTED WITH CAUTION by Review AI: {:.0}% → {:.0}%",
-                                    symbol, confidence, cautious
-                                );
-                                (cautious, Some(true), Some(rev_confidence))
+
+                            // finalDecision matches signal direction — apply verdict adjustments
+                            match final_verdict {
+                                Some("REJECT") => {
+                                    tracing::info!("{}: REJECTED by Review AI — skipping", symbol);
+                                    return None;
+                                }
+                                Some("DOWNGRADE") => {
+                                    let downgraded = (confidence - 20.0).max(20.0);
+                                    tracing::info!(
+                                        "{}: DOWNGRADED by Review AI: {:.0}% → {:.0}%",
+                                        symbol, confidence, downgraded
+                                    );
+                                    execution_action = Some("REDUCED_SIZE".into());
+                                    (downgraded, Some(false), Some(rev_confidence))
+                                }
+                                Some("ACCEPT_WITH_CAUTION") => {
+                                    let cautious = (confidence - 10.0).max(25.0);
+                                    tracing::info!(
+                                        "{}: ACCEPTED WITH CAUTION by Review AI: {:.0}% → {:.0}%",
+                                        symbol, confidence, cautious
+                                    );
+                                    (cautious, Some(true), Some(rev_confidence))
+                                }
+                                Some("ACCEPT") => {
+                                    let merged = (confidence + rev_confidence) / 2.0;
+                                    tracing::info!(
+                                        "{}: ACCEPTED by Review AI. Signal {:.0}% + Review {:.0}% → {:.0}%",
+                                        symbol, confidence, rev_confidence, merged
+                                    );
+                                    (merged, Some(true), Some(rev_confidence))
+                                }
+                                _ => (confidence, None, None),
                             }
-                            Some("ACCEPT") => {
-                                // Average the confidence with review's confidence
-                                let merged = (confidence + rev_confidence) / 2.0;
-                                tracing::info!(
-                                    "{}: ACCEPTED by Review AI. Signal {:.0}% + Review {:.0}% → {:.0}%",
-                                    symbol, confidence, rev_confidence, merged
-                                );
-                                (merged, Some(true), Some(rev_confidence))
+                        } else {
+                            // No finalDecision — fall back to old behavior
+                            match final_verdict {
+                                Some("REJECT") => {
+                                    tracing::info!("{}: REJECTED by Review AI — skipping", symbol);
+                                    return None;
+                                }
+                                Some("DOWNGRADE") => {
+                                    let downgraded = (confidence - 20.0).max(20.0);
+                                    tracing::info!(
+                                        "{}: DOWNGRADED by Review AI: {:.0}% → {:.0}%",
+                                        symbol, confidence, downgraded
+                                    );
+                                    execution_action = Some("REDUCED_SIZE".into());
+                                    (downgraded, Some(false), Some(rev_confidence))
+                                }
+                                Some("ACCEPT_WITH_CAUTION") => {
+                                    let cautious = (confidence - 10.0).max(25.0);
+                                    tracing::info!(
+                                        "{}: ACCEPTED WITH CAUTION by Review AI: {:.0}% → {:.0}%",
+                                        symbol, confidence, cautious
+                                    );
+                                    (cautious, Some(true), Some(rev_confidence))
+                                }
+                                Some("ACCEPT") => {
+                                    let merged = (confidence + rev_confidence) / 2.0;
+                                    tracing::info!(
+                                        "{}: ACCEPTED by Review AI. Signal {:.0}% + Review {:.0}% → {:.0}%",
+                                        symbol, confidence, rev_confidence, merged
+                                    );
+                                    (merged, Some(true), Some(rev_confidence))
+                                }
+                                _ => (confidence, None, None),
                             }
-                            _ => (confidence, None, None),
                         }
                     }
                     None => (confidence, None, None),
