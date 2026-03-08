@@ -16,7 +16,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Timeframe } from 'types/config';
 
 interface SignalFormProps {
-    onSubmit: (params: { pairs: string[]; timeframe: string; min_confidence: number }) => void;
+    onSubmit: (params: { pairs: string[]; timeframe: string; min_confidence: number; bet_value: number }) => void;
     analyzing: boolean;
     directionFilter: string;
     onDirectionFilterChange: (value: string) => void;
@@ -44,6 +44,7 @@ export const SignalForm: React.FC<SignalFormProps> = ({
         }
     }, [availablePairs, availableTimeframes, initialized]);
     const [minConfidence, setMinConfidence] = React.useState(30);
+    const [betValue, setBetValue] = React.useState(100);
 
     const togglePair = (pair: string) => {
         setSelectedPairs((prev) =>
@@ -52,11 +53,12 @@ export const SignalForm: React.FC<SignalFormProps> = ({
     };
 
     const handleSubmit = () => {
-        if (selectedPairs.length === 0) return;
+        if (selectedPairs.length === 0 || betValue <= 0) return;
         onSubmit({
             pairs: selectedPairs,
             timeframe,
             min_confidence: minConfidence,
+            bet_value: betValue,
         });
     };
 
@@ -95,6 +97,20 @@ export const SignalForm: React.FC<SignalFormProps> = ({
                         ))}
                     </Select>
                 </FormControl>
+
+                <TextField
+                    size="small"
+                    type="number"
+                    label="Bet Value ($)"
+                    value={betValue}
+                    onChange={(e) => {
+                        const val = Math.max(1, Number(e.target.value));
+                        setBetValue(val);
+                    }}
+                    inputProps={{ min: 1, step: 10 }}
+                    required
+                    sx={{ width: 140 }}
+                />
 
                 <TextField
                     size="small"

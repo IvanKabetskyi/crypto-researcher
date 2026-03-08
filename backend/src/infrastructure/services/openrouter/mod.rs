@@ -4,6 +4,8 @@ use crate::domain::market::entities::MarketSnapshot;
 use crate::domain::prediction::entities::Prediction;
 use crate::domain::prediction::services::AnalysisService;
 
+// ── Anthropic API types ─────────────────────────────────────────────────────
+
 #[derive(Serialize)]
 struct AnthropicRequest {
     model: String,
@@ -35,26 +37,137 @@ struct AnthropicError {
     message: String,
 }
 
-#[derive(Deserialize, Debug)]
-struct AiPredictionResponse {
-    predictions: Option<Vec<AiPrediction>>,
+// ── Pipeline stage output types ─────────────────────────────────────────────
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct MarketAnalysis {
+    symbol: String,
+    market_bias: Option<String>,
+    trend_strength: Option<String>,
+    key_levels: Option<KeyLevels>,
+    momentum: Option<String>,
+    volume_profile: Option<String>,
+    derivatives_sentiment: Option<String>,
+    summary: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-struct AiPrediction {
-    symbol: Option<String>,
+#[allow(dead_code)]
+struct KeyLevels {
+    support: Option<f64>,
+    resistance: Option<f64>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SignalOutput {
+    symbol: String,
     direction: Option<String>,
     confidence: Option<f64>,
-    reasoning: Option<String>,
+    setup_type: Option<String>,
     entry_price: Option<f64>,
     target_price: Option<f64>,
+    secondary_target: Option<f64>,
     stop_loss: Option<f64>,
+    invalidation: Option<f64>,
+    reasoning: Option<String>,
 }
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RiskAssessment {
+    symbol: String,
+    decision: Option<String>,
+    risk_reward_ratio: Option<f64>,
+    position_size_pct: Option<f64>,
+    risk_notes: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+struct StrategyOutput {
+    symbol: String,
+    execution_action: Option<String>,
+    adjusted_entry: Option<f64>,
+    adjusted_target: Option<f64>,
+    adjusted_stop: Option<f64>,
+    adjusted_position_size_pct: Option<f64>,
+    execution_notes: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct ReviewResult {
+    review_result: Option<ReviewVerdict>,
+    detected_issues: Option<Vec<String>>,
+    review_notes: Option<Vec<String>>,
+    final_approved_plan: Option<ReviewPlan>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct ReviewVerdict {
+    consistency_status: Option<String>,
+    final_verdict: Option<String>,
+    confidence: Option<f64>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct ReviewPlan {
+    market_bias: Option<String>,
+    execution_plan: Option<String>,
+    setup_type: Option<String>,
+    targets: Option<ReviewTargets>,
+    invalidation: Option<f64>,
+    risk_decision: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
+struct ReviewTargets {
+    primary: Option<f64>,
+    secondary: Option<f64>,
+}
+
+// ── Wrapper responses for JSON parsing ──────────────────────────────────────
+
+#[derive(Deserialize, Debug)]
+struct AnalysisResponse {
+    analyses: Option<Vec<MarketAnalysis>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SignalResponse {
+    signals: Option<Vec<SignalOutput>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct RiskResponse {
+    assessments: Option<Vec<RiskAssessment>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct StrategyResponse {
+    strategies: Option<Vec<StrategyOutput>>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ReviewResponse {
+    reviews: Option<Vec<ReviewResult>>,
+}
+
+// ── AI Service ──────────────────────────────────────────────────────────────
 
 pub struct AIService {
     base_url: String,
     model: String,
-    confirmation_model: String,
+    review_model: String,
     api_key: String,
     client: reqwest::Client,
 }
@@ -65,7 +178,7 @@ impl AIService {
             .unwrap_or_else(|_| "https://api.anthropic.com".into());
         let model = std::env::var("AI_MODEL")
             .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
-        let confirmation_model = std::env::var("AI_CONFIRMATION_MODEL")
+        let review_model = std::env::var("AI_REVIEW_MODEL")
             .unwrap_or_else(|_| "claude-haiku-4-5-20251001".into());
         let api_key = std::env::var("AI_API_KEY")
             .unwrap_or_default();
@@ -73,7 +186,7 @@ impl AIService {
         Self {
             base_url,
             model,
-            confirmation_model,
+            review_model,
             api_key,
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(180))
@@ -146,7 +259,7 @@ impl AIService {
         Ok(text)
     }
 
-    fn parse_predictions(raw: &str) -> Result<Vec<AiPrediction>, Box<dyn std::error::Error + Send + Sync>> {
+    fn parse_json_response(raw: &str, prefill_key: &str) -> String {
         let cleaned = raw
             .trim()
             .trim_start_matches("```json")
@@ -154,175 +267,236 @@ impl AIService {
             .trim_end_matches("```")
             .trim();
 
-        // The assistant message is prefilled with {"predictions":[ so the response
-        // continues from there. Prepend the prefix back to form valid JSON.
-        let full_json = if cleaned.starts_with('{') || cleaned.starts_with("[{") {
-            // If it already looks like full JSON or the model repeated the prefix
-            if cleaned.starts_with("{\"predictions\"") {
-                cleaned.to_string()
-            } else {
-                format!("{{\"predictions\":[{}", cleaned)
-            }
-        } else {
+        // The assistant prefill starts with {"key":[ so the response continues from there
+        let opening = format!("{{\"{}\":", prefill_key);
+        if cleaned.starts_with('{') && cleaned.contains(prefill_key) {
             cleaned.to_string()
-        };
-
-        let response: AiPredictionResponse = serde_json::from_str(&full_json)
-            .map_err(|e| format!("JSON parse error: {}. Content: {}", e, &full_json[..full_json.len().min(300)]))?;
-
-        Ok(response.predictions.unwrap_or_default())
+        } else {
+            format!("{}[{}]", opening, cleaned.trim_start_matches('[').trim_end_matches(']'))
+        }
     }
 
-    fn build_technical_analysis_prompt(timeframe: &str) -> String {
+    // ── Step 1: Market Analyzer ─────────────────────────────────────────────
+
+    fn build_market_analyzer_prompt(timeframe: &str) -> String {
         let timeframe_guidance = match timeframe {
-            "5min" => "\
-            IMPORTANT — 5-MINUTE SCALPING RULES:\n\
-            - 5min candles are NOISY. Do NOT trust weak signals.\n\
-            - Focus on the LAST 3 CANDLES (last_3_candles_pattern) — engulfing patterns are the strongest signals.\n\
-            - SMA periods are shorter (5/13) to react faster — but still check if price is clearly above or below both.\n\
-            - RSI uses period 9 for faster signals. On 5min, RSI >65 already indicates overbought, RSI <35 = oversold.\n\
-            - Volume spikes (last_candle_volume_spike) are CRITICAL on 5min — a spike signals institutional activity.\n\
-            - Only high-confidence setups work on 5min: engulfing + volume spike + RSI extreme.\n\
-            - If signals are mixed or unclear, the correct answer is LOW confidence (30-40%).\n\
-            - Targets must be VERY tight: 0.05-0.15%. Anything larger is unrealistic for 5min.\n\n",
-            "30min" => "\
-            30-MINUTE RULES:\n\
-            - SMA periods are 7/15 for moderate responsiveness.\n\
-            - Last 3 candle patterns carry good weight.\n\
-            - Volume spikes on 30min are meaningful — check last_candle_volume_spike.\n\
-            - A move of >1% in last 5 candles (2.5 hours) is already significant.\n\n",
-            _ => "",
+            "5min" => "SCALPING context: focus on last 3 candles, volume spikes, RSI(9) extremes. Only strong setups matter.",
+            "30min" => "SWING context: SMA(7/15), last 3 candle patterns, volume confirmation needed.",
+            "1h" => "INTRADAY context: standard SMA analysis, trend following or mean reversion setups.",
+            "6h" => "POSITION context: broader trend analysis, key level identification.",
+            "12h" => "MULTI-DAY context: major trend direction, support/resistance zones.",
+            "24h" => "DAILY context: macro trend, key level analysis, news impact assessment.",
+            _ => "Standard analysis context.",
         };
 
         format!(
-            "You are a professional cryptocurrency technical analyst. \
-            You receive pre-computed technical indicators and raw candle data.\n\n\
-            Perform a DETAILED technical analysis for each symbol on the {timeframe} timeframe.\n\n\
-            {timeframe_guidance}\
-            The indicator periods are ALREADY adjusted for the {timeframe} timeframe \
-            (sma_fast/sma_slow labels show the actual periods used).\n\n\
-            For EACH symbol, analyze in this exact order:\n\n\
-            1. TREND: What does the SMA crossover (sma_trend) say? Is price above or below both SMAs? \
-            How many green vs red candles? Is this a clear trend or ranging?\n\n\
-            2. RSI: Is it overbought, oversold, or neutral? \
-            Does RSI agree or diverge from the trend?\n\n\
-            3. EXTENDED MOVE CHECK (PAY EXTRA ATTENTION HERE):\n\
-            When a move has been running for many candles, analyze it MORE carefully. \
-            Check these signals — they DON'T automatically mean reversal, but they require deeper analysis:\n\
-            a) consecutive_streak: A long streak means the move is mature. Pay extra attention to whether \
-               it still has momentum or is fading. A long streak alone is not a reversal signal.\n\
-            b) exhaustion_signal: If present, it means the move COULD be ending. \
-               Look for confirmation from other indicators before concluding reversal.\n\
-            c) dist_from_sma_slow: Price far from the mean deserves caution — \
-               but strong trends can stay extended. Check if momentum is still strong.\n\
-            d) RSI extremes: RSI >70 or <30 means the move is stretched. \
-               This is a WARNING to be cautious, not an automatic reversal signal.\n\
-            e) momentum_10_candles: A large move over 10 candles means you need to assess \
-               whether the move is accelerating (continuation likely) or decelerating (reversal possible).\n\
-            f) last_candle_signal: Rejection wicks after an extended move are meaningful reversal clues.\n\
-            g) last_3_candles_pattern: Engulfing patterns after extended moves are strong reversal clues.\n\
-            h) change_24h from ticker data: Large 24h change = be extra careful in your analysis.\n\n\
-            The key point: extended moves need MORE evidence to predict continuation. \
-            Reduce confidence if the move looks mature. But don't automatically predict opposite — \
-            look at the full picture.\n\n\
-            4. MOMENTUM: Is the move still fresh (small %) or already extended (large %)? \
-            Fresh moves with small momentum are better entry points than extended ones.\n\n\
-            5. VOLUME: Does volume_ratio confirm the move? Check last_candle_volume_spike — \
-            a HIGH_SPIKE on the last candle is a KEY signal (especially on short timeframes).\n\n\
-            6. CANDLE PATTERNS: Check last_candle_signal AND last_3_candles_pattern. \
-            These patterns are especially important after extended moves.\n\n\
-            7. SUPPORT/RESISTANCE: Where is price relative to key levels?\n\n\
-            8. ORDER BOOK ANALYSIS:\n\
-            - Check orderbook_ratio (bid_volume / ask_volume).\n\
-            - ratio > 1.2 = buyers dominate, bullish pressure\n\
-            - ratio < 0.8 = sellers dominate, bearish pressure\n\
-            - This shows real-time supply/demand from large traders.\n\n\
-            9. DERIVATIVES SENTIMENT:\n\
-            - funding_rate: Negative funding = shorts pay longs = potential SHORT SQUEEZE (bullish). \
-              Positive funding = longs pay shorts = potential LONG SQUEEZE (bearish).\n\
-            - long_ratio vs short_ratio: Shows market positioning. \
-              When too many traders are on one side, the market often moves AGAINST them.\n\
-            - open_interest: Rising OI with price = trend confirmed. Rising OI against price = reversal building.\n\
-            - Derivatives data often LEADS price — it reveals what smart money is doing.\n\n\
-            10. NEWS: Any headlines that override the technical picture?\n\n\
-            11. CONCLUSION for each symbol: Combine technical indicators AND derivatives data. \n\
-            If technicals and derivatives agree → higher confidence.\n\
-            If they disagree → lower confidence, explain the conflict.\n\
-            What is the most likely direction for the NEXT {timeframe} candle(s)? \n\
-            If the move has been extended, explain whether you think it continues or reverses and WHY. \
-            Is this a trend-following or mean-reversion setup? \
-            How confident are you (low/medium/high)?\n\n\
-            Write your analysis as plain text. Be specific — reference actual indicator values.",
+            "You are MARKET ANALYZER AI — Stage 1 of a multi-agent trading pipeline.\n\n\
+            Your ONLY job: analyze raw market data and produce a compact JSON market context.\n\
+            You do NOT generate trade signals. You do NOT recommend actions.\n\
+            You analyze and summarize the market state objectively.\n\n\
+            Timeframe: {timeframe}\n\
+            {timeframe_guidance}\n\n\
+            For EACH symbol in the data, analyze:\n\
+            1. Market bias (bullish/bearish/neutral) based on SMA trend, price position, candle patterns\n\
+            2. Trend strength (strong/moderate/weak)\n\
+            3. Key support/resistance levels from recent price action\n\
+            4. Momentum assessment (RSI, consecutive streak, exhaustion signals)\n\
+            5. Volume profile (confirming/diverging, any spikes)\n\
+            6. Derivatives sentiment (funding rate, long/short ratio, order book pressure)\n\
+            7. Brief summary of the overall market picture\n\n\
+            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            {{\"analyses\": [{{\"symbol\": \"BTCUSDT\", \"marketBias\": \"bullish|bearish|neutral\", \
+            \"trendStrength\": \"strong|moderate|weak\", \
+            \"keyLevels\": {{\"support\": number, \"resistance\": number}}, \
+            \"momentum\": \"accelerating|steady|decelerating|exhausted\", \
+            \"volumeProfile\": \"confirming|diverging|spike\", \
+            \"derivativesSentiment\": \"bullish|bearish|neutral|squeeze_risk\", \
+            \"summary\": \"2-3 sentence objective market state\"}}]}}",
             timeframe = timeframe,
             timeframe_guidance = timeframe_guidance,
         )
     }
 
-    fn build_prediction_prompt(technical_analysis: &str, timeframe: &str) -> String {
-        let target_guide = match timeframe {
-            "5min"  => "5min SCALP: target 0.05-0.15%, stop 0.05-0.1%. Very tight — small quick moves only.",
-            "30min" => "30min: target 0.15-0.4%, stop 0.1-0.25%.",
-            "1h"    => "1h: target 0.3-0.8%, stop 0.2-0.4%.",
-            "6h"    => "6h: target 0.5-1.5%, stop 0.3-0.8%.",
-            "12h"   => "12h: target 1.0-2.5%, stop 0.5-1.2%.",
-            "24h"   => "24h: target 1.5-4.0%, stop 0.8-2.0%.",
-            _       => "target 0.3-0.8%, stop 0.2-0.4%.",
+    // ── Step 2: Signal Generator ────────────────────────────────────────────
+
+    fn build_signal_generator_prompt(market_context_json: &str, timeframe: &str) -> String {
+        let (target_guide, time_horizon) = match timeframe {
+            "5min"  => ("target 0.03-0.10%, stop 0.03-0.07%", "5-15 MINUTES"),
+            "30min" => ("target 0.10-0.30%, stop 0.08-0.20%", "30-90 MINUTES"),
+            "1h"    => ("target 0.25-0.70%, stop 0.15-0.35%", "1-3 HOURS"),
+            "6h"    => ("target 0.5-1.5%, stop 0.3-0.8%", "6-18 HOURS"),
+            "12h"   => ("target 1.0-2.5%, stop 0.5-1.2%", "12-36 HOURS"),
+            "24h"   => ("target 1.5-4.0%, stop 0.8-2.0%", "1-3 DAYS"),
+            _       => ("target 0.3-0.8%, stop 0.2-0.4%", "1-3 candles"),
         };
 
         format!(
-            "You are a cryptocurrency trading analyst. Below is a detailed technical analysis \
-            that was just performed on the market data.\n\n\
-            === TECHNICAL ANALYSIS ===\n{technical_analysis}\n\n\
-            Based on this analysis, generate trading predictions for the {timeframe} timeframe.\n\n\
+            "You are SIGNAL GENERATOR AI — Stage 2 of a multi-agent trading pipeline.\n\n\
+            You receive the MARKET ANALYZER's output (Stage 1) plus raw market data.\n\
+            Your job: decide whether there is a trade and define the setup.\n\n\
+            === MARKET ANALYSIS (from Stage 1) ===\n{market_context_json}\n\n\
+            TIMEFRAME: {timeframe} | TIME HORIZON: {time_horizon}\n\
+            TARGETS: {target_guide}\n\n\
             RULES:\n\
-            - Your predictions MUST align with the analysis conclusions above\n\
-            - If the analysis found exhaustion/reversal signals, predict the REVERSAL direction\n\
-            - If the analysis found a fresh trend, predict trend continuation\n\
+            - If market bias is neutral or signals are mixed → set direction to \"NO_TRADE\" with low confidence\n\
             - entry_price = current market price from the data\n\
             - For SHORT: target BELOW entry, stop_loss ABOVE entry\n\
             - For LONG: target ABOVE entry, stop_loss BELOW entry\n\
-            - Risk/reward must be at least 1.5:1\n\n\
-            TARGET & STOP-LOSS for {timeframe}: {target_guide}\n\n\
-            CONFIDENCE based on analysis strength:\n\
-            - 30-45: Analysis was uncertain or mixed signals\n\
-            - 45-60: Moderate clarity, 2-3 indicators aligned\n\
-            - 60-75: Strong clarity, most indicators + exhaustion/trend aligned\n\
-            - 75-85: Very strong, everything aligned + news confirmed\n\n\
-            OUTPUT: Valid JSON only — no markdown, no code fences.\n\
-            {{\"predictions\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long\" or \"short\", \
-            \"confidence\": 0-100, \"reasoning\": \"summarize the key analysis points\", \
-            \"entry_price\": number, \"target_price\": number, \"stop_loss\": number}}]}}\n\
-            One prediction per symbol.",
-            technical_analysis = technical_analysis,
+            - Risk/reward must be at least 1.5:1\n\
+            - setup_type: one of BREAKOUT, MEAN_REVERSION, SQUEEZE, CONTINUATION, NO_SETUP\n\
+            - invalidation: price level where the entire thesis is wrong\n\n\
+            CONFIDENCE:\n\
+            - 30-45: uncertain/mixed signals\n\
+            - 45-60: moderate, 2-3 indicators aligned\n\
+            - 60-75: strong, most indicators aligned\n\
+            - 75-85: very strong, everything aligned\n\n\
+            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            {{\"signals\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long|short|NO_TRADE\", \
+            \"confidence\": 0-100, \"setupType\": \"BREAKOUT|MEAN_REVERSION|SQUEEZE|CONTINUATION|NO_SETUP\", \
+            \"entryPrice\": number, \"targetPrice\": number, \"secondaryTarget\": number, \
+            \"stopLoss\": number, \"invalidation\": number, \
+            \"reasoning\": \"key factors driving this signal\"}}]}}",
+            market_context_json = market_context_json,
             timeframe = timeframe,
+            time_horizon = time_horizon,
+            target_guide = target_guide,
         )
     }
 
-    fn build_confirmation_prompt(sonnet_predictions_json: &str, timeframe: &str) -> String {
+    // ── Step 3: Risk Manager ────────────────────────────────────────────────
+
+    fn build_risk_manager_prompt(market_json: &str, signal_json: &str, timeframe: &str, bet_value: f64) -> String {
         format!(
-            "You are an independent cryptocurrency trading analyst performing a SECOND OPINION review.\n\n\
-            Another analyst produced the predictions below for the {timeframe} timeframe. \
-            You have access to the same market data.\n\n\
-            YOUR TASK:\n\
-            - Independently analyze the market data provided.\n\
-            - For each prediction, decide if you AGREE or DISAGREE with the direction.\n\
-            - Provide your own confidence score (0-100) based on YOUR analysis.\n\
-            - If you disagree on direction, set your confidence for the OPPOSITE direction.\n\
-            - Write a brief reasoning (1-2 sentences) explaining your view.\n\n\
-            PREVIOUS ANALYST'S PREDICTIONS:\n{sonnet_predictions_json}\n\n\
-            OUTPUT: Valid JSON only — no markdown, no code fences.\n\
-            {{\"predictions\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long\" or \"short\", \
-            \"confidence\": 0-100, \"reasoning\": \"your independent assessment\"}}]}}\n\
-            One prediction per symbol.",
+            "You are RISK MANAGER AI — Stage 3 of a multi-agent trading pipeline.\n\n\
+            You receive outputs from Stage 1 (Market Analyzer) and Stage 2 (Signal Generator).\n\
+            Your job: evaluate risk and decide whether to APPROVE, REDUCE_SIZE, or REJECT each trade.\n\n\
+            === MARKET ANALYSIS (Stage 1) ===\n{market_json}\n\n\
+            === SIGNALS (Stage 2) ===\n{signal_json}\n\n\
+            TIMEFRAME: {timeframe}\n\
+            BET VALUE: ${bet_value:.2} — this is the total capital the trader is willing to risk on this trade.\n\
+            Use this to assess whether the trade makes sense for this bet size.\n\
+            If the bet is large relative to the risk, consider REDUCE_SIZE.\n\
+            positionSizePct is the % of bet_value to actually deploy.\n\n\
+            EVALUATION CRITERIA:\n\
+            1. Is the risk/reward ratio acceptable? (minimum 1.5:1)\n\
+            2. Does the stop loss placement make sense given market structure?\n\
+            3. Is the position sizing appropriate for the volatility and bet value?\n\
+            4. Are there hidden risks (upcoming news, derivatives pressure, exhaustion)?\n\
+            5. Does the signal confidence match the market conditions?\n\n\
+            DECISIONS:\n\
+            - APPROVE: trade is sound, risk is acceptable\n\
+            - REDUCE_SIZE: trade is okay but risk warrants smaller position (set positionSizePct to 25-75)\n\
+            - REJECT: risk too high, poor setup, or conflicting signals\n\n\
+            For NO_TRADE signals, always set decision to REJECT.\n\n\
+            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            {{\"assessments\": [{{\"symbol\": \"BTCUSDT\", \"decision\": \"APPROVE|REDUCE_SIZE|REJECT\", \
+            \"riskRewardRatio\": number, \"positionSizePct\": 0-100, \
+            \"riskNotes\": \"explanation of risk assessment\"}}]}}",
+            market_json = market_json,
+            signal_json = signal_json,
             timeframe = timeframe,
-            sonnet_predictions_json = sonnet_predictions_json,
+            bet_value = bet_value,
         )
     }
+
+    // ── Step 4: Strategy Optimizer ───────────────────────────────────────────
+
+    fn build_strategy_optimizer_prompt(
+        market_json: &str,
+        signal_json: &str,
+        risk_json: &str,
+        timeframe: &str,
+        bet_value: f64,
+    ) -> String {
+        format!(
+            "You are STRATEGY OPTIMIZER AI — Stage 4 of a multi-agent trading pipeline.\n\n\
+            You receive outputs from all previous stages. Your job: produce the final optimized execution plan.\n\n\
+            === MARKET ANALYSIS (Stage 1) ===\n{market_json}\n\n\
+            === SIGNALS (Stage 2) ===\n{signal_json}\n\n\
+            === RISK ASSESSMENT (Stage 3) ===\n{risk_json}\n\n\
+            TIMEFRAME: {timeframe}\n\
+            BET VALUE: ${bet_value:.2} — the trader's total capital for this trade.\n\
+            adjustedPositionSizePct is the % of this bet to deploy.\n\
+            For SCALE_IN: first entry should be 30-50% of bet, rest on confirmation.\n\n\
+            YOUR TASK:\n\
+            1. For REJECTED trades: set executionAction to SKIP_TRADE\n\
+            2. For APPROVED/REDUCE_SIZE trades, decide execution strategy:\n\
+               - ENTER_NOW: conditions are ideal, enter immediately\n\
+               - WAIT_CONFIRMATION: setup is good but needs one more confirmation candle\n\
+               - SCALE_IN: enter partial now, add on confirmation\n\
+               - REDUCED_SIZE: enter with smaller position due to risk\n\
+               - SKIP_TRADE: despite approval, optimizer sees a reason to skip\n\
+            3. Adjust entry/target/stop if you see a better level based on the full picture\n\
+            4. Set final position size percentage (0-100)\n\n\
+            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            {{\"strategies\": [{{\"symbol\": \"BTCUSDT\", \
+            \"executionAction\": \"ENTER_NOW|WAIT_CONFIRMATION|SCALE_IN|REDUCED_SIZE|SKIP_TRADE\", \
+            \"adjustedEntry\": number, \"adjustedTarget\": number, \"adjustedStop\": number, \
+            \"adjustedPositionSizePct\": 0-100, \
+            \"executionNotes\": \"why this execution approach\"}}]}}",
+            market_json = market_json,
+            signal_json = signal_json,
+            risk_json = risk_json,
+            timeframe = timeframe,
+            bet_value = bet_value,
+        )
+    }
+
+    // ── Step 5: Review AI (Haiku) ───────────────────────────────────────────
+
+    fn build_review_prompt(
+        market_json: &str,
+        signal_json: &str,
+        risk_json: &str,
+        strategy_json: &str,
+    ) -> String {
+        format!(
+            "You are REVIEW AI — Stage 5 of a multi-agent trading pipeline.\n\
+            You are an INDEPENDENT reviewer. Do NOT blindly agree with previous agents.\n\
+            Your job: detect weak reasoning, conflicts, and hidden risk.\n\n\
+            === MARKET ANALYSIS (Stage 1) ===\n{market_json}\n\n\
+            === SIGNALS (Stage 2) ===\n{signal_json}\n\n\
+            === RISK ASSESSMENT (Stage 3) ===\n{risk_json}\n\n\
+            === STRATEGY (Stage 4) ===\n{strategy_json}\n\n\
+            REVIEW TASKS:\n\
+            1. CONSISTENCY CHECK: Are all agent outputs logically consistent?\n\
+            2. CONFLICT DETECTION: Does any agent contradict another?\n\
+               Examples: bullish signal with poor risk/reward, approved trade with weak invalidation,\n\
+               optimizer suggests entry while risk manager implies caution\n\
+            3. WEAK REASONING: Are conclusions shallow, unsupported, or overconfident?\n\
+            4. EXECUTION QUALITY: Is the final plan justified by the analysis?\n\
+            5. FINAL VALIDATION: Should the plan be accepted, accepted with caution, downgraded, or rejected?\n\n\
+            RULES:\n\
+            - Do NOT redo full market analysis from scratch\n\
+            - Challenge prior outputs when needed\n\
+            - Prefer skepticism over agreement\n\
+            - Protect capital and execution quality first\n\
+            - If you DOWNGRADE: reduce confidence by 15-25 points\n\
+            - If you REJECT: the trade should not be taken\n\n\
+            For each symbol, output your review.\n\
+            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            {{\"reviews\": [{{\"reviewResult\": {{\"consistencyStatus\": \"PASS|WARNING|FAIL\", \
+            \"finalVerdict\": \"ACCEPT|ACCEPT_WITH_CAUTION|DOWNGRADE|REJECT\", \"confidence\": 0-100}}, \
+            \"detectedIssues\": [\"issue1\", ...], \"reviewNotes\": [\"note1\", ...], \
+            \"finalApprovedPlan\": {{\"marketBias\": \"bullish|bearish|neutral\", \
+            \"executionPlan\": \"ENTER_NOW|WAIT_CONFIRMATION|SCALE_IN|REDUCED_SIZE|SKIP_TRADE\", \
+            \"setupType\": \"BREAKOUT|MEAN_REVERSION|SQUEEZE|CONTINUATION|NO_SETUP\", \
+            \"targets\": {{\"primary\": number, \"secondary\": number}}, \
+            \"invalidation\": number, \"riskDecision\": \"APPROVE|REDUCE_SIZE|REJECT\"}}}}]}}",
+            market_json = market_json,
+            signal_json = signal_json,
+            risk_json = risk_json,
+            strategy_json = strategy_json,
+        )
+    }
+
+    // ── Main pipeline ───────────────────────────────────────────────────────
 
     pub async fn analyze(
         &self,
         snapshot: &MarketSnapshot,
         timeframe: &str,
+        bet_value: f64,
     ) -> Result<Vec<Prediction>, Box<dyn std::error::Error + Send + Sync>> {
         if self.api_key.is_empty() {
             return Err("AI_API_KEY not set. Set your Anthropic API key.".into());
@@ -334,136 +508,334 @@ impl AIService {
         let indicators_json = snapshot.compute_indicators(timeframe);
         let derivatives_json = snapshot.derivatives_to_json();
 
-        let user_content =
-            AnalysisService::build_analysis_prompt(&tickers_json, &klines_json, &news_json, &indicators_json, &derivatives_json, timeframe);
+        let user_content = AnalysisService::build_analysis_prompt(
+            &tickers_json, &klines_json, &news_json, &indicators_json, &derivatives_json, timeframe,
+        );
 
-        // Step 1: Technical analysis (free text — AI thinks through the data first)
-        let ta_system = Self::build_technical_analysis_prompt(timeframe);
-        tracing::info!("Step 1: Technical analysis with {}", self.model);
-        let technical_analysis = self
-            .call_model(&self.model, &ta_system, &user_content, 4096, None)
+        // ── STEP 1: Market Analyzer ─────────────────────────────────────────
+        let step1_system = Self::build_market_analyzer_prompt(timeframe);
+        tracing::info!("Pipeline Step 1: Market Analyzer ({})", self.model);
+        let step1_raw = self
+            .call_model(&self.model, &step1_system, &user_content, 4096, Some("{\"analyses\":["))
             .await?;
-        tracing::info!("Technical analysis: {} chars", technical_analysis.len());
+        let step1_json = Self::parse_json_response(&step1_raw, "analyses");
+        tracing::info!("Step 1 complete: {} chars", step1_json.len());
 
-        // Step 2: Generate predictions based on the analysis
-        let prediction_system = Self::build_prediction_prompt(&technical_analysis, timeframe);
-        tracing::info!("Step 2: Generating predictions with {}", self.model);
-        let sonnet_raw = self
-            .call_model(&self.model, &prediction_system, &user_content, 4096, Some("{\"predictions\":["))
-            .await?;
-        tracing::info!("Sonnet predictions: {} chars", sonnet_raw.len());
+        let analyses: Vec<MarketAnalysis> = serde_json::from_str::<AnalysisResponse>(&step1_json)
+            .map(|r| r.analyses.unwrap_or_default())
+            .unwrap_or_else(|e| {
+                tracing::warn!("Step 1 parse warning: {}", e);
+                vec![]
+            });
 
-        let sonnet_predictions = Self::parse_predictions(&sonnet_raw)?;
-        if sonnet_predictions.is_empty() {
-            return Err("Sonnet returned 0 predictions".into());
+        if analyses.is_empty() {
+            return Err("Market Analyzer returned 0 analyses".into());
         }
-        tracing::info!("Sonnet returned {} predictions", sonnet_predictions.len());
 
-        // Step 3: Confirmation with Haiku
-        let sonnet_summary: Vec<serde_json::Value> = sonnet_predictions.iter().map(|p| {
-            serde_json::json!({
-                "symbol": p.symbol,
-                "direction": p.direction,
-                "confidence": p.confidence,
-                "entry_price": p.entry_price,
-                "target_price": p.target_price,
-                "stop_loss": p.stop_loss,
-                "reasoning": p.reasoning,
-            })
-        }).collect();
-        let sonnet_json = serde_json::to_string(&sonnet_summary).unwrap_or_default();
+        // 1-2s delay between AI calls
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
-        let confirmation_system = Self::build_confirmation_prompt(&sonnet_json, timeframe);
+        // ── STEP 2: Signal Generator ────────────────────────────────────────
+        let step2_system = Self::build_signal_generator_prompt(&step1_json, timeframe);
+        tracing::info!("Pipeline Step 2: Signal Generator ({})", self.model);
+        let step2_raw = self
+            .call_model(&self.model, &step2_system, &user_content, 4096, Some("{\"signals\":["))
+            .await?;
+        let step2_json = Self::parse_json_response(&step2_raw, "signals");
+        tracing::info!("Step 2 complete: {} chars", step2_json.len());
 
-        tracing::info!("Step 3: Confirmation with {}", self.confirmation_model);
-        let haiku_result = self.call_model(
-            &self.confirmation_model,
-            &confirmation_system,
-            &user_content,
-            4096,
-            Some("{\"predictions\":["),
-        ).await;
+        let signals: Vec<SignalOutput> = serde_json::from_str::<SignalResponse>(&step2_json)
+            .map(|r| r.signals.unwrap_or_default())
+            .unwrap_or_else(|e| {
+                tracing::warn!("Step 2 parse warning: {}", e);
+                vec![]
+            });
 
-        let haiku_predictions = match haiku_result {
+        if signals.is_empty() {
+            return Err("Signal Generator returned 0 signals".into());
+        }
+
+        // Filter out NO_TRADE before continuing (save tokens for later stages)
+        let active_signals: Vec<&SignalOutput> = signals
+            .iter()
+            .filter(|s| s.direction.as_deref() != Some("NO_TRADE"))
+            .collect();
+
+        if active_signals.is_empty() {
+            tracing::info!("All signals are NO_TRADE — no predictions to generate");
+            return Ok(vec![]);
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+        // ── STEP 3: Risk Manager ────────────────────────────────────────────
+        let step3_system = Self::build_risk_manager_prompt(&step1_json, &step2_json, timeframe, bet_value);
+        tracing::info!("Pipeline Step 3: Risk Manager ({})", self.model);
+        let step3_raw = self
+            .call_model(&self.model, &step3_system, &user_content, 3000, Some("{\"assessments\":["))
+            .await?;
+        let step3_json = Self::parse_json_response(&step3_raw, "assessments");
+        tracing::info!("Step 3 complete: {} chars", step3_json.len());
+
+        let risks: Vec<RiskAssessment> = serde_json::from_str::<RiskResponse>(&step3_json)
+            .map(|r| r.assessments.unwrap_or_default())
+            .unwrap_or_else(|e| {
+                tracing::warn!("Step 3 parse warning: {}", e);
+                vec![]
+            });
+
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+        // ── STEP 4: Strategy Optimizer ──────────────────────────────────────
+        let step4_system = Self::build_strategy_optimizer_prompt(&step1_json, &step2_json, &step3_json, timeframe, bet_value);
+        tracing::info!("Pipeline Step 4: Strategy Optimizer ({})", self.model);
+        let step4_raw = self
+            .call_model(&self.model, &step4_system, &user_content, 3000, Some("{\"strategies\":["))
+            .await?;
+        let step4_json = Self::parse_json_response(&step4_raw, "strategies");
+        tracing::info!("Step 4 complete: {} chars", step4_json.len());
+
+        let strategies: Vec<StrategyOutput> = serde_json::from_str::<StrategyResponse>(&step4_json)
+            .map(|r| r.strategies.unwrap_or_default())
+            .unwrap_or_else(|e| {
+                tracing::warn!("Step 4 parse warning: {}", e);
+                vec![]
+            });
+
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+        // ── STEP 5: Review AI (Haiku) ───────────────────────────────────────
+        let step5_system = Self::build_review_prompt(&step1_json, &step2_json, &step3_json, &step4_json);
+        tracing::info!("Pipeline Step 5: Review AI ({})", self.review_model);
+        let step5_result = self
+            .call_model(&self.review_model, &step5_system, &user_content, 3000, Some("{\"reviews\":["))
+            .await;
+
+        let reviews: Vec<ReviewResult> = match step5_result {
             Ok(raw) => {
-                tracing::info!("Haiku response: {} chars", raw.len());
-                Self::parse_predictions(&raw).unwrap_or_default()
+                let json = Self::parse_json_response(&raw, "reviews");
+                tracing::info!("Step 5 complete: {} chars", json.len());
+                serde_json::from_str::<ReviewResponse>(&json)
+                    .map(|r| r.reviews.unwrap_or_default())
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("Step 5 parse warning: {}", e);
+                        vec![]
+                    })
             }
             Err(e) => {
-                tracing::warn!("Haiku confirmation failed (using Sonnet only): {}", e);
+                tracing::warn!("Review AI failed (proceeding without): {}", e);
                 vec![]
             }
         };
 
-        // Step 3: Merge — adjust confidence based on agreement
-        let predictions: Vec<Prediction> = sonnet_predictions
+        // ── Merge all stages into Predictions ───────────────────────────────
+        let predictions = self.merge_pipeline(
+            &analyses, &signals, &risks, &strategies, &reviews, timeframe,
+        );
+
+        tracing::info!("Pipeline complete: {} final predictions", predictions.len());
+        Ok(predictions)
+    }
+
+    fn merge_pipeline(
+        &self,
+        analyses: &[MarketAnalysis],
+        signals: &[SignalOutput],
+        risks: &[RiskAssessment],
+        strategies: &[StrategyOutput],
+        reviews: &[ReviewResult],
+        timeframe: &str,
+    ) -> Vec<Prediction> {
+        signals
             .iter()
-            .filter_map(|sp| {
-                let symbol = sp.symbol.as_deref()?;
-                let sonnet_dir = sp.direction.as_deref()?;
-                let sonnet_conf = sp.confidence?;
-                let reasoning = sp.reasoning.as_deref().unwrap_or("No reasoning provided");
-                let entry_price = sp.entry_price?;
-                let target_price = sp.target_price?;
-                let stop_loss = sp.stop_loss?;
+            .filter_map(|signal| {
+                let symbol = &signal.symbol;
+                let direction = signal.direction.as_deref()?;
 
-                // Find Haiku's opinion on the same symbol
-                let haiku_match = haiku_predictions.iter().find(|hp| {
-                    hp.symbol.as_deref() == Some(symbol)
-                });
+                // Skip NO_TRADE
+                if direction == "NO_TRADE" {
+                    return None;
+                }
 
-                // Validate target/stop_loss direction
-                let (target_price, stop_loss) = if sonnet_dir == "short" && target_price > entry_price {
-                    // SHORT: target must be below entry, stop above
-                    tracing::warn!("{}: Correcting SHORT target/stop — target was above entry", symbol);
-                    (stop_loss.min(entry_price * 0.995), target_price.max(entry_price * 1.005))
-                } else if sonnet_dir == "long" && target_price < entry_price {
-                    // LONG: target must be above entry, stop below
-                    tracing::warn!("{}: Correcting LONG target/stop — target was below entry", symbol);
-                    (stop_loss.max(entry_price * 1.005), target_price.min(entry_price * 0.995))
-                } else {
-                    (target_price, stop_loss)
-                };
+                let confidence = signal.confidence.unwrap_or(50.0);
+                let entry_price = signal.entry_price?;
+                let mut target_price = signal.target_price?;
+                let mut stop_loss = signal.stop_loss?;
+                let secondary_target = signal.secondary_target;
+                let invalidation = signal.invalidation;
+                let setup_type = signal.setup_type.clone();
+                let reasoning = signal.reasoning.as_deref().unwrap_or("No reasoning");
 
-                let (final_confidence, final_reasoning) = match haiku_match {
-                    Some(hp) => {
-                        let haiku_dir = hp.direction.as_deref().unwrap_or("");
-                        let haiku_conf = hp.confidence.unwrap_or(50.0);
-                        let haiku_reasoning = hp.reasoning.as_deref().unwrap_or("");
+                // Get market analysis
+                let analysis = analyses.iter().find(|a| a.symbol == *symbol);
+                let market_bias = analysis.and_then(|a| a.market_bias.clone());
 
-                        if haiku_dir != sonnet_dir {
-                            // Models DISAGREE on direction — skip entirely
-                            tracing::info!(
-                                "{}: SKIPPED — Sonnet says {}({:.0}%) but Haiku says {}({:.0}%)",
-                                symbol, sonnet_dir, sonnet_conf, haiku_dir, haiku_conf
-                            );
-                            return None;
+                // Get risk assessment
+                let risk = risks.iter().find(|r| r.symbol == *symbol);
+                let risk_decision = risk.and_then(|r| r.decision.clone());
+                let risk_reward_ratio = risk.and_then(|r| r.risk_reward_ratio);
+                let mut position_size_pct = risk.and_then(|r| r.position_size_pct);
+
+                // Skip REJECTED trades
+                if risk_decision.as_deref() == Some("REJECT") {
+                    tracing::info!("{}: REJECTED by Risk Manager — skipping", symbol);
+                    return None;
+                }
+
+                // Get strategy optimizer output
+                let strategy = strategies.iter().find(|s| s.symbol == *symbol);
+                let mut execution_action = strategy.and_then(|s| s.execution_action.clone());
+
+                // Apply strategy adjustments
+                if let Some(strat) = strategy {
+                    if strat.execution_action.as_deref() == Some("SKIP_TRADE") {
+                        tracing::info!("{}: SKIPPED by Strategy Optimizer", symbol);
+                        return None;
+                    }
+                    if let Some(adj_entry) = strat.adjusted_entry {
+                        if adj_entry > 0.0 {
+                            // Use adjusted entry only for logging; entry_price stays as market price
+                            tracing::info!("{}: Optimizer adjusted entry {:.2} → {:.2}", symbol, entry_price, adj_entry);
                         }
+                    }
+                    if let Some(adj_target) = strat.adjusted_target {
+                        if adj_target > 0.0 {
+                            target_price = adj_target;
+                        }
+                    }
+                    if let Some(adj_stop) = strat.adjusted_stop {
+                        if adj_stop > 0.0 {
+                            stop_loss = adj_stop;
+                        }
+                    }
+                    if let Some(adj_size) = strat.adjusted_position_size_pct {
+                        position_size_pct = Some(adj_size);
+                    }
+                }
 
-                        // Both AGREE — use average confidence
-                        let merged = (sonnet_conf + haiku_conf) / 2.0;
-                        let combined = format!(
-                            "{}\n\n[Confirmed by second analysis ({:.0}%): {}]",
-                            reasoning, haiku_conf, haiku_reasoning
-                        );
-                        tracing::info!(
-                            "{}: AGREE ({}) Sonnet {:.0}% + Haiku {:.0}% → avg {:.0}%",
-                            symbol, sonnet_dir, sonnet_conf, haiku_conf, merged
-                        );
-                        (merged, combined)
+                // Get review (Haiku) verdict
+                // Use index-based matching for reviews (reviews are ordered same as signals)
+                let signal_idx = signals.iter().position(|s| s.symbol == *symbol)?;
+                let review = reviews.get(signal_idx);
+
+                let (mut final_confidence, review_agreed, review_confidence) = match review {
+                    Some(rev) => {
+                        let verdict = rev.review_result.as_ref();
+                        let final_verdict = verdict.and_then(|v| v.final_verdict.as_deref());
+                        let rev_confidence = verdict.and_then(|v| v.confidence).unwrap_or(confidence);
+
+                        match final_verdict {
+                            Some("REJECT") => {
+                                tracing::info!("{}: REJECTED by Review AI — skipping", symbol);
+                                return None;
+                            }
+                            Some("DOWNGRADE") => {
+                                let downgraded = (confidence - 20.0).max(20.0);
+                                tracing::info!(
+                                    "{}: DOWNGRADED by Review AI: {:.0}% → {:.0}%",
+                                    symbol, confidence, downgraded
+                                );
+                                // Override execution to caution
+                                execution_action = Some("REDUCED_SIZE".into());
+                                (downgraded, Some(false), Some(rev_confidence))
+                            }
+                            Some("ACCEPT_WITH_CAUTION") => {
+                                let cautious = (confidence - 10.0).max(25.0);
+                                tracing::info!(
+                                    "{}: ACCEPTED WITH CAUTION by Review AI: {:.0}% → {:.0}%",
+                                    symbol, confidence, cautious
+                                );
+                                (cautious, Some(true), Some(rev_confidence))
+                            }
+                            Some("ACCEPT") => {
+                                // Average the confidence with review's confidence
+                                let merged = (confidence + rev_confidence) / 2.0;
+                                tracing::info!(
+                                    "{}: ACCEPTED by Review AI. Signal {:.0}% + Review {:.0}% → {:.0}%",
+                                    symbol, confidence, rev_confidence, merged
+                                );
+                                (merged, Some(true), Some(rev_confidence))
+                            }
+                            _ => (confidence, None, None),
+                        }
                     }
-                    None => {
-                        // Haiku didn't return opinion — use Sonnet as-is
-                        tracing::info!("{}: Haiku no opinion, using Sonnet {:.0}%", symbol, sonnet_conf);
-                        (sonnet_conf, reasoning.to_string())
-                    }
+                    None => (confidence, None, None),
                 };
 
-                Some(Prediction::new(
+                // Validate target/stop direction
+                if direction == "short" && target_price > entry_price {
+                    tracing::warn!("{}: Correcting SHORT target/stop", symbol);
+                    std::mem::swap(&mut target_price, &mut stop_loss);
+                } else if direction == "long" && target_price < entry_price {
+                    tracing::warn!("{}: Correcting LONG target/stop", symbol);
+                    std::mem::swap(&mut target_price, &mut stop_loss);
+                }
+
+                // Clamp targets to max % for the timeframe
+                let max_target_pct = match timeframe {
+                    "5min"  => 0.0010,
+                    "30min" => 0.0030,
+                    "1h"    => 0.0070,
+                    "6h"    => 0.0150,
+                    "12h"   => 0.0250,
+                    "24h"   => 0.0400,
+                    _       => 0.0080,
+                };
+                let target_dist = ((target_price - entry_price) / entry_price).abs();
+                if target_dist > max_target_pct {
+                    tracing::warn!(
+                        "{}: Clamping target from {:.4}% to {:.4}% for {}",
+                        symbol, target_dist * 100.0, max_target_pct * 100.0, timeframe
+                    );
+                    target_price = if direction == "long" {
+                        entry_price * (1.0 + max_target_pct)
+                    } else {
+                        entry_price * (1.0 - max_target_pct)
+                    };
+                    let stop_dist = ((stop_loss - entry_price) / entry_price).abs();
+                    if stop_dist > max_target_pct {
+                        stop_loss = if direction == "long" {
+                            entry_price * (1.0 - max_target_pct * 0.5)
+                        } else {
+                            entry_price * (1.0 + max_target_pct * 0.5)
+                        };
+                    }
+                }
+
+                // Cap confidence
+                final_confidence = final_confidence.clamp(10.0, 95.0);
+
+                // Build reasoning with pipeline context
+                let risk_notes = risk.and_then(|r| r.risk_notes.as_deref()).unwrap_or("");
+                let exec_notes = strategy.and_then(|s| s.execution_notes.as_deref()).unwrap_or("");
+                let review_notes = review
+                    .and_then(|r| r.review_notes.as_ref())
+                    .map(|notes| notes.join("; "))
+                    .unwrap_or_default();
+
+                let full_reasoning = format!(
+                    "{reasoning}\n\n\
+                    [Risk: {risk_decision} | R:R {rr:.1}:1] {risk_notes}\n\
+                    [Execution: {exec_action}] {exec_notes}\n\
+                    {review_section}",
+                    reasoning = reasoning,
+                    risk_decision = risk_decision.as_deref().unwrap_or("N/A"),
+                    rr = risk_reward_ratio.unwrap_or(0.0),
+                    risk_notes = risk_notes,
+                    exec_action = execution_action.as_deref().unwrap_or("N/A"),
+                    exec_notes = exec_notes,
+                    review_section = if review_notes.is_empty() {
+                        String::new()
+                    } else {
+                        format!("[Review: {}]", review_notes)
+                    },
+                );
+
+                let prediction = Prediction::new(
                     symbol,
-                    sonnet_dir,
+                    direction,
                     final_confidence,
-                    &final_reasoning,
+                    &full_reasoning,
                     entry_price,
                     target_price,
                     stop_loss,
@@ -472,12 +844,31 @@ impl AIService {
                     None,
                     None,
                     Some(timeframe.to_string()),
-                ))
+                )
+                .with_pipeline(
+                    market_bias,
+                    setup_type,
+                    risk_decision,
+                    risk_reward_ratio,
+                    execution_action,
+                    secondary_target,
+                    invalidation,
+                    position_size_pct,
+                    review_agreed,
+                    review_confidence,
+                );
+
+                tracing::info!(
+                    "{}: {} {:.0}% | {} | {}",
+                    symbol,
+                    direction,
+                    final_confidence,
+                    prediction.get_setup_type().unwrap_or("N/A"),
+                    prediction.get_execution_action().unwrap_or("N/A"),
+                );
+
+                Some(prediction)
             })
-            .collect();
-
-        tracing::info!("Final merged predictions: {}", predictions.len());
-
-        Ok(predictions)
+            .collect()
     }
 }

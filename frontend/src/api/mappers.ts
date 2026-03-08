@@ -13,6 +13,16 @@ interface PredictionApiResponse {
     created_at: string;
     outcome: string | null;
     timeframe?: string;
+    market_bias?: string;
+    setup_type?: string;
+    risk_decision?: string;
+    risk_reward_ratio?: number;
+    execution_action?: string;
+    secondary_target?: number;
+    invalidation?: number;
+    position_size_pct?: number;
+    review_agreed?: boolean;
+    review_confidence?: number;
 }
 
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
@@ -27,6 +37,16 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     createdAt: data.created_at,
     outcome: data.outcome,
     timeframe: data.timeframe,
+    marketBias: data.market_bias,
+    setupType: data.setup_type,
+    riskDecision: data.risk_decision,
+    riskRewardRatio: data.risk_reward_ratio,
+    executionAction: data.execution_action,
+    secondaryTarget: data.secondary_target,
+    invalidation: data.invalidation,
+    positionSizePct: data.position_size_pct,
+    reviewAgreed: data.review_agreed,
+    reviewConfidence: data.review_confidence,
 });
 
 interface HistoryApiResponse {

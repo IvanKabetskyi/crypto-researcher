@@ -19,10 +19,15 @@ pub fn start_scheduler(interval_secs: u64) {
             let default_pairs = ConfigDto::default_config().pairs.join(",");
             let pairs = std::env::var("WATCH_PAIRS").unwrap_or(default_pairs);
             let symbols: Vec<String> = pairs.split(',').map(|s| s.trim().to_string()).collect();
+            let bet_value: f64 = std::env::var("DEFAULT_BET_VALUE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100.0);
             let params = AnalyzeParams {
                 pairs: symbols,
                 timeframe: "1h".to_string(),
                 min_confidence: 30.0,
+                bet_value,
             };
             if let Err(e) = run_analysis_use_case(params).await {
                 tracing::error!("Scheduled analysis failed: {}", e);

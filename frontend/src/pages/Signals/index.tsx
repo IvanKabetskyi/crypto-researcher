@@ -29,6 +29,7 @@ export const Signals = () => {
         pairs: string[];
         timeframe: string;
         min_confidence: number;
+        bet_value: number;
     }) => {
         try {
             await runAnalysis(params).unwrap();

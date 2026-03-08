@@ -14,9 +14,21 @@ pub struct Prediction {
     outcome: Option<String>,
     actual_price_after: Option<f64>,
     timeframe: Option<String>,
+    // Pipeline fields
+    market_bias: Option<String>,
+    setup_type: Option<String>,
+    risk_decision: Option<String>,
+    risk_reward_ratio: Option<f64>,
+    execution_action: Option<String>,
+    secondary_target: Option<f64>,
+    invalidation: Option<f64>,
+    position_size_pct: Option<f64>,
+    review_agreed: Option<bool>,
+    review_confidence: Option<f64>,
 }
 
 impl Prediction {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         symbol: &str,
         direction: &str,
@@ -44,7 +56,43 @@ impl Prediction {
             outcome,
             actual_price_after,
             timeframe,
+            market_bias: None,
+            setup_type: None,
+            risk_decision: None,
+            risk_reward_ratio: None,
+            execution_action: None,
+            secondary_target: None,
+            invalidation: None,
+            position_size_pct: None,
+            review_agreed: None,
+            review_confidence: None,
         }
+    }
+
+    pub fn with_pipeline(
+        mut self,
+        market_bias: Option<String>,
+        setup_type: Option<String>,
+        risk_decision: Option<String>,
+        risk_reward_ratio: Option<f64>,
+        execution_action: Option<String>,
+        secondary_target: Option<f64>,
+        invalidation: Option<f64>,
+        position_size_pct: Option<f64>,
+        review_agreed: Option<bool>,
+        review_confidence: Option<f64>,
+    ) -> Self {
+        self.market_bias = market_bias;
+        self.setup_type = setup_type;
+        self.risk_decision = risk_decision;
+        self.risk_reward_ratio = risk_reward_ratio;
+        self.execution_action = execution_action;
+        self.secondary_target = secondary_target;
+        self.invalidation = invalidation;
+        self.position_size_pct = position_size_pct;
+        self.review_agreed = review_agreed;
+        self.review_confidence = review_confidence;
+        self
     }
 
     pub fn get_id(&self) -> ObjectId {
@@ -93,5 +141,45 @@ impl Prediction {
 
     pub fn get_timeframe(&self) -> Option<&str> {
         self.timeframe.as_deref()
+    }
+
+    pub fn get_market_bias(&self) -> Option<&str> {
+        self.market_bias.as_deref()
+    }
+
+    pub fn get_setup_type(&self) -> Option<&str> {
+        self.setup_type.as_deref()
+    }
+
+    pub fn get_risk_decision(&self) -> Option<&str> {
+        self.risk_decision.as_deref()
+    }
+
+    pub fn get_risk_reward_ratio(&self) -> Option<f64> {
+        self.risk_reward_ratio
+    }
+
+    pub fn get_execution_action(&self) -> Option<&str> {
+        self.execution_action.as_deref()
+    }
+
+    pub fn get_secondary_target(&self) -> Option<f64> {
+        self.secondary_target
+    }
+
+    pub fn get_invalidation(&self) -> Option<f64> {
+        self.invalidation
+    }
+
+    pub fn get_position_size_pct(&self) -> Option<f64> {
+        self.position_size_pct
+    }
+
+    pub fn get_review_agreed(&self) -> Option<bool> {
+        self.review_agreed
+    }
+
+    pub fn get_review_confidence(&self) -> Option<f64> {
+        self.review_confidence
     }
 }

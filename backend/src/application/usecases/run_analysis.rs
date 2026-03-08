@@ -97,7 +97,7 @@ pub async fn run_analysis_use_case(
 
     // Call AI for analysis
     let raw_predictions = ai_service
-        .analyze(&snapshot, timeframe)
+        .analyze(&snapshot, timeframe, params.bet_value)
         .await
         .map_err(|e| format!("AI analysis failed: {}", e))?;
 

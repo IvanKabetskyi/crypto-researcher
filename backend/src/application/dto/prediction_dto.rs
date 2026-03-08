@@ -15,6 +15,16 @@ pub struct PredictionDto {
     created_at: String,
     outcome: Option<String>,
     timeframe: Option<String>,
+    market_bias: Option<String>,
+    setup_type: Option<String>,
+    risk_decision: Option<String>,
+    risk_reward_ratio: Option<f64>,
+    execution_action: Option<String>,
+    secondary_target: Option<f64>,
+    invalidation: Option<f64>,
+    position_size_pct: Option<f64>,
+    review_agreed: Option<bool>,
+    review_confidence: Option<f64>,
 }
 
 impl PredictionDto {
@@ -31,6 +41,16 @@ impl PredictionDto {
             created_at: prediction.get_created_at().to_rfc3339(),
             outcome: prediction.get_outcome().map(String::from),
             timeframe: prediction.get_timeframe().map(String::from),
+            market_bias: prediction.get_market_bias().map(String::from),
+            setup_type: prediction.get_setup_type().map(String::from),
+            risk_decision: prediction.get_risk_decision().map(String::from),
+            risk_reward_ratio: prediction.get_risk_reward_ratio(),
+            execution_action: prediction.get_execution_action().map(String::from),
+            secondary_target: prediction.get_secondary_target(),
+            invalidation: prediction.get_invalidation(),
+            position_size_pct: prediction.get_position_size_pct(),
+            review_agreed: prediction.get_review_agreed(),
+            review_confidence: prediction.get_review_confidence(),
         }
     }
 }

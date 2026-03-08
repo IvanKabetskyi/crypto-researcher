@@ -7,6 +7,7 @@ interface RunAnalysisParams {
     pairs: string[];
     timeframe: string;
     min_confidence: number;
+    bet_value: number;
 }
 
 export const runAnalysis = createAsyncThunk<Prediction[], RunAnalysisParams>(

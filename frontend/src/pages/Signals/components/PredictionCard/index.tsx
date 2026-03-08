@@ -24,6 +24,47 @@ const getOutcomeColor = (outcome: Prediction['outcome']): string => {
     }
 };
 
+const getRiskColor = (decision?: string): string => {
+    switch (decision) {
+        case 'APPROVE':
+            return '#00e676';
+        case 'REDUCE_SIZE':
+            return '#ffab00';
+        case 'REJECT':
+            return '#ff1744';
+        default:
+            return '#9e9e9e';
+    }
+};
+
+const getExecutionColor = (action?: string): string => {
+    switch (action) {
+        case 'ENTER_NOW':
+            return '#00e676';
+        case 'SCALE_IN':
+            return '#29b6f6';
+        case 'WAIT_CONFIRMATION':
+            return '#ffab00';
+        case 'REDUCED_SIZE':
+            return '#ffa726';
+        case 'SKIP_TRADE':
+            return '#ff1744';
+        default:
+            return '#9e9e9e';
+    }
+};
+
+const getBiasColor = (bias?: string): string => {
+    switch (bias) {
+        case 'bullish':
+            return '#00e676';
+        case 'bearish':
+            return '#ff1744';
+        default:
+            return '#9e9e9e';
+    }
+};
+
 export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) => {
     const [expanded, setExpanded] = useState(false);
     const isLong = prediction.direction === 'long';
@@ -78,13 +119,59 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                     </Box>
                 </Box>
 
-                {prediction.timeframe && (
-                    <Box mb={1}>
+                {/* Pipeline tags row */}
+                <Box display="flex" flexWrap="wrap" gap={0.5} mb={1.5}>
+                    {prediction.timeframe && (
                         <Chip label={prediction.timeframe} size="small" variant="outlined" />
-                    </Box>
-                )}
+                    )}
+                    {prediction.marketBias && (
+                        <Chip
+                            label={prediction.marketBias.toUpperCase()}
+                            size="small"
+                            sx={{
+                                backgroundColor: `${getBiasColor(prediction.marketBias)}15`,
+                                color: getBiasColor(prediction.marketBias),
+                                fontWeight: 600,
+                                fontSize: '0.7rem',
+                            }}
+                        />
+                    )}
+                    {prediction.setupType && (
+                        <Chip
+                            label={prediction.setupType.replace('_', ' ')}
+                            size="small"
+                            variant="outlined"
+                            sx={{ fontSize: '0.7rem' }}
+                        />
+                    )}
+                    {prediction.riskDecision && (
+                        <Chip
+                            label={`Risk: ${prediction.riskDecision}`}
+                            size="small"
+                            sx={{
+                                backgroundColor: `${getRiskColor(prediction.riskDecision)}15`,
+                                color: getRiskColor(prediction.riskDecision),
+                                fontWeight: 600,
+                                fontSize: '0.7rem',
+                            }}
+                        />
+                    )}
+                    {prediction.executionAction && (
+                        <Chip
+                            label={prediction.executionAction.replace('_', ' ')}
+                            size="small"
+                            sx={{
+                                backgroundColor: `${getExecutionColor(prediction.executionAction)}15`,
+                                color: getExecutionColor(prediction.executionAction),
+                                fontWeight: 600,
+                                fontSize: '0.7rem',
+                            }}
+                        />
+                    )}
+                </Box>
 
-                <Box display="flex" gap={2} mb={1.5}>
+                {/* Price levels */}
+                <Box display="flex" gap={2} mb={1.5} flexWrap="wrap">
                     <Box>
                         <Typography variant="caption" color="text.secondary">
                             Entry
@@ -101,6 +188,16 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                             ${formatPrice(prediction.targetPrice)}
                         </Typography>
                     </Box>
+                    {prediction.secondaryTarget && (
+                        <Box>
+                            <Typography variant="caption" color="text.secondary">
+                                Target 2
+                            </Typography>
+                            <Typography variant="body2" fontWeight={600} sx={{ color: '#29b6f6' }}>
+                                ${formatPrice(prediction.secondaryTarget)}
+                            </Typography>
+                        </Box>
+                    )}
                     <Box>
                         <Typography variant="caption" color="text.secondary">
                             Stop Loss
@@ -109,7 +206,58 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                             ${formatPrice(prediction.stopLoss)}
                         </Typography>
                     </Box>
+                    {prediction.invalidation && (
+                        <Box>
+                            <Typography variant="caption" color="text.secondary">
+                                Invalidation
+                            </Typography>
+                            <Typography variant="body2" fontWeight={600} sx={{ color: '#ff5252' }}>
+                                ${formatPrice(prediction.invalidation)}
+                            </Typography>
+                        </Box>
+                    )}
                 </Box>
+
+                {/* Risk/Reward and Position Size row */}
+                {(prediction.riskRewardRatio || prediction.positionSizePct) && (
+                    <Box display="flex" gap={2} mb={1.5}>
+                        {prediction.riskRewardRatio != null && (
+                            <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                    R:R Ratio
+                                </Typography>
+                                <Typography variant="body2" fontWeight={600}>
+                                    {prediction.riskRewardRatio.toFixed(1)}:1
+                                </Typography>
+                            </Box>
+                        )}
+                        {prediction.positionSizePct != null && (
+                            <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                    Position Size
+                                </Typography>
+                                <Typography variant="body2" fontWeight={600}>
+                                    {prediction.positionSizePct.toFixed(0)}%
+                                </Typography>
+                            </Box>
+                        )}
+                        {prediction.reviewConfidence != null && (
+                            <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                    Review Score
+                                </Typography>
+                                <Typography
+                                    variant="body2"
+                                    fontWeight={600}
+                                    sx={{ color: prediction.reviewAgreed ? '#00e676' : '#ffab00' }}
+                                >
+                                    {prediction.reviewConfidence.toFixed(0)}%
+                                    {prediction.reviewAgreed === false && ' (cautious)'}
+                                </Typography>
+                            </Box>
+                        )}
+                    </Box>
+                )}
 
                 <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.06)' }} />
 
