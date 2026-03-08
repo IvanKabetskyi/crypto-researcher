@@ -100,9 +100,17 @@ struct StrategyOutput {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
+struct DetectedIssue {
+    source: Option<String>,
+    issue: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct ReviewResult {
     review_result: Option<ReviewVerdict>,
-    detected_issues: Option<Vec<String>>,
+    detected_issues: Option<Vec<DetectedIssue>>,
     review_notes: Option<Vec<String>>,
     final_approved_plan: Option<ReviewPlan>,
 }
@@ -178,9 +186,9 @@ impl AIService {
         let base_url = std::env::var("AI_API_URL")
             .unwrap_or_else(|_| "https://api.anthropic.com".into());
         let model = std::env::var("AI_MODEL")
-            .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
+            .unwrap_or_else(|_| "claude-opus-4-20250514".into());
         let review_model = std::env::var("AI_REVIEW_MODEL")
-            .unwrap_or_else(|_| "claude-haiku-4-5-20251001".into());
+            .unwrap_or_else(|_| "claude-opus-4-20250514".into());
         let api_key = std::env::var("AI_API_KEY")
             .unwrap_or_default();
 
@@ -452,40 +460,72 @@ impl AIService {
         strategy_json: &str,
     ) -> String {
         format!(
-            "You are REVIEW AI — Stage 5 of a multi-agent trading pipeline.\n\
-            You are an INDEPENDENT reviewer. Do NOT blindly agree with previous agents.\n\
-            Your job: detect weak reasoning, conflicts, and hidden risk.\n\n\
+            "STEP 5 — REVIEW AI\n\n\
+            ROLE\n\
+            You are the final adjudication and validation layer in a multi-step crypto AI pipeline.\n\n\
+            PURPOSE\n\
+            Your job is to review the outputs of the previous agents, detect weak reasoning or contradictions, \
+            and produce a final usable decision.\n\
+            You are NOT a passive summarizer.\n\
+            You are NOT allowed to return an unreasoned rejection.\n\
+            You must always return a fully populated structured result.\n\n\
+            INPUTS\n\
             === MARKET ANALYSIS (Stage 1) ===\n{market_json}\n\n\
             === SIGNALS (Stage 2) ===\n{signal_json}\n\n\
             === RISK ASSESSMENT (Stage 3) ===\n{risk_json}\n\n\
             === STRATEGY (Stage 4) ===\n{strategy_json}\n\n\
-            REVIEW TASKS:\n\
-            1. CONSISTENCY CHECK: Are all agent outputs logically consistent?\n\
-            2. CONFLICT DETECTION: Does any agent contradict another?\n\
-               Examples: bullish signal with poor risk/reward, approved trade with weak invalidation,\n\
-               optimizer suggests entry while risk manager implies caution\n\
-            3. WEAK REASONING: Are conclusions shallow, unsupported, or overconfident?\n\
-            4. EXECUTION QUALITY: Is the final plan justified by the analysis?\n\
-            5. FINAL VALIDATION: Should the plan be accepted, accepted with caution, downgraded, or rejected?\n\
-            6. FINAL ADJUDICATION: Always return a final actionable decision — LONG, SHORT, or NO_TRADE.\n\n\
-            RULES:\n\
-            - Do NOT redo full market analysis from scratch\n\
-            - Challenge prior outputs when needed\n\
-            - Prefer skepticism over agreement\n\
-            - Protect capital and execution quality first\n\
-            - If you DOWNGRADE: reduce confidence by 15-25 points\n\
-            - If you REJECT: the trade should not be taken\n\
-            - Do not return only criticism. You must produce a final actionable result.\n\
-            - If prior outputs are weak or conflicting, reduce confidence instead of avoiding a final conclusion.\n\n\
+            PRIMARY RESPONSIBILITIES\n\
+            1. Check logical consistency — verify that previous agent outputs are internally consistent.\n\
+            2. Detect contradictions — find conflicts between market bias, execution plan, risk stance, \
+            target/invalidation quality, confidence levels.\n\
+            3. Detect weak reasoning — identify unsupported, shallow, generic, or overconfident conclusions.\n\
+            4. Validate execution quality — determine whether the final execution plan is justified.\n\
+            5. Final adjudication — you must always return one final actionable result: LONG, SHORT, or NO_TRADE.\n\
+            6. Confidence adjustment — if evidence is mixed, reduce confidence instead of collapsing into empty rejection.\n\n\
+            IMPORTANT DECISION RULES\n\
+            - Do not default to REJECT. Do not use REJECT as a fallback.\n\
+            - Minor disagreement between earlier agents is NOT enough for REJECT.\n\
+            - A weak entry is not the same as a weak market thesis.\n\
+            - Directional bias and execution timing are separate outputs.\n\
+            - If directional bias is still valid but entry quality is weak, prefer: \
+            ACCEPT_WITH_CAUTION, DOWNGRADE, WAIT_CONFIRMATION, or REDUCED_SIZE.\n\
+            - Use REJECT only when the setup is structurally invalid.\n\
+            - Use NO_TRADE only when: contradictions are severe, confidence is below threshold, \
+            execution quality is unacceptable, or targets/invalidation are structurally broken.\n\n\
+            STRICT OUTPUT RULES\n\
+            1. Always return a fully populated JSON object.\n\
+            2. Never return empty arrays for both detectedIssues and reviewNotes.\n\
+            3. If finalVerdict is ACCEPT: reviewNotes must contain at least 1 item.\n\
+            4. If finalVerdict is ACCEPT_WITH_CAUTION or DOWNGRADE: detectedIssues must contain at least 1 concrete issue, \
+            reviewNotes must contain at least 1 concrete note.\n\
+            5. If finalVerdict is REJECT: finalDecision must be NO_TRADE, detectedIssues must contain at least 2 concrete issues, \
+            reviewNotes must contain at least 1 explanatory note, finalApprovedPlan must still be fully populated.\n\
+            6. Never use vague phrases without specifics (e.g. 'mixed signals', 'uncertain market') unless you explain the exact cause.\n\
+            7. Every detected issue must reference which prior agent output caused it.\n\n\
+            VERDICT DEFINITIONS\n\
+            - ACCEPT: thesis and execution are acceptable.\n\
+            - ACCEPT_WITH_CAUTION: thesis is valid, but some moderate risk exists.\n\
+            - DOWNGRADE: thesis may still be valid, but confidence, sizing, or execution quality must be reduced.\n\
+            - REJECT: thesis or execution is structurally invalid, so finalDecision must be NO_TRADE.\n\n\
+            REVIEW THRESHOLD LOGIC — prefer this downgrade ladder:\n\
+            1. ACCEPT → 2. ACCEPT_WITH_CAUTION → 3. DOWNGRADE → 4. REJECT\n\
+            Use the least severe valid outcome. Do not jump to REJECT unless clearly justified.\n\n\
+            DIRECTIONAL THESIS RULE\n\
+            Do not confuse market direction with execution timing.\n\
+            - marketBias can remain LONG while executionPlan is WAIT_CONFIRMATION.\n\
+            - marketBias can remain SHORT while riskDecision is REDUCE_SIZE.\n\
+            - Only set finalDecision to NO_TRADE if the setup should truly not be taken.\n\n\
             For each symbol, output your review.\n\
             OUTPUT: Valid JSON only. No markdown, no code fences.\n\
             {{\"reviews\": [{{\"reviewResult\": {{\"consistencyStatus\": \"PASS|WARNING|FAIL\", \
             \"finalVerdict\": \"ACCEPT|ACCEPT_WITH_CAUTION|DOWNGRADE|REJECT\", \
             \"finalDecision\": \"LONG|SHORT|NO_TRADE\", \"confidence\": 0-100}}, \
-            \"detectedIssues\": [\"issue1\", ...], \"reviewNotes\": [\"note1\", ...], \
+            \"detectedIssues\": [{{\"source\": \"MarketAnalyzer|SignalGenerator|RiskManager|StrategyOptimizer\", \
+            \"issue\": \"description\"}}], \
+            \"reviewNotes\": [\"note1\", ...], \
             \"finalApprovedPlan\": {{\"marketBias\": \"LONG|SHORT|NO_TRADE\", \
             \"executionPlan\": \"ENTER_NOW|WAIT_CONFIRMATION|SCALE_IN|REDUCED_SIZE|SKIP_TRADE\", \
-            \"setupType\": \"BREAKOUT|MEAN_REVERSION|SQUEEZE|CONTINUATION|NO_SETUP\", \
+            \"setupType\": \"breakout|mean_reversion|trend_continuation|squeeze|no_trade\", \
             \"targets\": {{\"primary\": number, \"secondary\": number}}, \
             \"invalidation\": number, \"riskDecision\": \"APPROVE|REDUCE_SIZE|REJECT\"}}}}]}}",
             market_json = market_json,
@@ -886,13 +926,31 @@ impl AIService {
                 // Cap confidence
                 final_confidence = final_confidence.clamp(10.0, 95.0);
 
+                // Extract review details
+                let review_verdict_str = review
+                    .and_then(|r| r.review_result.as_ref())
+                    .and_then(|v| v.final_verdict.clone());
+                let review_decision_str = review
+                    .and_then(|r| r.review_result.as_ref())
+                    .and_then(|v| v.final_decision.clone());
+                let review_issues: Vec<String> = review
+                    .and_then(|r| r.detected_issues.as_ref())
+                    .map(|issues| {
+                        issues.iter().filter_map(|di| {
+                            let source = di.source.as_deref().unwrap_or("Unknown");
+                            let issue = di.issue.as_deref()?;
+                            Some(format!("{}: {}", source, issue))
+                        }).collect()
+                    })
+                    .unwrap_or_default();
+                let review_notes_vec: Vec<String> = review
+                    .and_then(|r| r.review_notes.clone())
+                    .unwrap_or_default();
+
                 // Build reasoning with pipeline context
                 let risk_notes = risk.and_then(|r| r.risk_notes.as_deref()).unwrap_or("");
                 let exec_notes = strategy.and_then(|s| s.execution_notes.as_deref()).unwrap_or("");
-                let review_notes = review
-                    .and_then(|r| r.review_notes.as_ref())
-                    .map(|notes| notes.join("; "))
-                    .unwrap_or_default();
+                let review_notes_joined = review_notes_vec.join("; ");
 
                 let full_reasoning = format!(
                     "{reasoning}\n\n\
@@ -905,12 +963,15 @@ impl AIService {
                     risk_notes = risk_notes,
                     exec_action = execution_action.as_deref().unwrap_or("N/A"),
                     exec_notes = exec_notes,
-                    review_section = if review_notes.is_empty() {
+                    review_section = if review_notes_joined.is_empty() {
                         String::new()
                     } else {
-                        format!("[Review: {}]", review_notes)
+                        format!("[Review: {}]", review_notes_joined)
                     },
                 );
+
+                let review_issues_opt = if review_issues.is_empty() { None } else { Some(review_issues) };
+                let review_notes_opt = if review_notes_vec.is_empty() { None } else { Some(review_notes_vec) };
 
                 let prediction = Prediction::new(
                     symbol,
@@ -937,6 +998,10 @@ impl AIService {
                     position_size_pct,
                     review_agreed,
                     review_confidence,
+                    review_verdict_str,
+                    review_decision_str,
+                    review_issues_opt,
+                    review_notes_opt,
                 );
 
                 tracing::info!(

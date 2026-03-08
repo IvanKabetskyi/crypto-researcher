@@ -25,6 +25,10 @@ pub struct Prediction {
     position_size_pct: Option<f64>,
     review_agreed: Option<bool>,
     review_confidence: Option<f64>,
+    review_verdict: Option<String>,
+    review_decision: Option<String>,
+    review_issues: Option<Vec<String>>,
+    review_notes: Option<Vec<String>>,
 }
 
 impl Prediction {
@@ -66,6 +70,10 @@ impl Prediction {
             position_size_pct: None,
             review_agreed: None,
             review_confidence: None,
+            review_verdict: None,
+            review_decision: None,
+            review_issues: None,
+            review_notes: None,
         }
     }
 
@@ -81,6 +89,10 @@ impl Prediction {
         position_size_pct: Option<f64>,
         review_agreed: Option<bool>,
         review_confidence: Option<f64>,
+        review_verdict: Option<String>,
+        review_decision: Option<String>,
+        review_issues: Option<Vec<String>>,
+        review_notes: Option<Vec<String>>,
     ) -> Self {
         self.market_bias = market_bias;
         self.setup_type = setup_type;
@@ -92,6 +104,10 @@ impl Prediction {
         self.position_size_pct = position_size_pct;
         self.review_agreed = review_agreed;
         self.review_confidence = review_confidence;
+        self.review_verdict = review_verdict;
+        self.review_decision = review_decision;
+        self.review_issues = review_issues;
+        self.review_notes = review_notes;
         self
     }
 
@@ -181,5 +197,21 @@ impl Prediction {
 
     pub fn get_review_confidence(&self) -> Option<f64> {
         self.review_confidence
+    }
+
+    pub fn get_review_verdict(&self) -> Option<&str> {
+        self.review_verdict.as_deref()
+    }
+
+    pub fn get_review_decision(&self) -> Option<&str> {
+        self.review_decision.as_deref()
+    }
+
+    pub fn get_review_issues(&self) -> Option<&[String]> {
+        self.review_issues.as_deref()
+    }
+
+    pub fn get_review_notes(&self) -> Option<&[String]> {
+        self.review_notes.as_deref()
     }
 }

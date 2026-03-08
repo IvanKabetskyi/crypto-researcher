@@ -21,4 +21,8 @@ export interface Prediction {
     positionSizePct?: number;
     reviewAgreed?: boolean;
     reviewConfidence?: number;
+    reviewVerdict?: string;
+    reviewDecision?: string;
+    reviewIssues?: string[];
+    reviewNotes?: string[];
 }

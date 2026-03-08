@@ -31,6 +31,10 @@ pub struct PredictionSchema {
     pub position_size_pct: Option<f64>,
     pub review_agreed: Option<bool>,
     pub review_confidence: Option<f64>,
+    pub review_verdict: Option<String>,
+    pub review_decision: Option<String>,
+    pub review_issues: Option<Vec<String>>,
+    pub review_notes: Option<Vec<String>>,
 }
 
 impl PredictionSchema {
@@ -58,6 +62,10 @@ impl PredictionSchema {
             position_size_pct: p.get_position_size_pct(),
             review_agreed: p.get_review_agreed(),
             review_confidence: p.get_review_confidence(),
+            review_verdict: p.get_review_verdict().map(String::from),
+            review_decision: p.get_review_decision().map(String::from),
+            review_issues: p.get_review_issues().map(|v| v.to_vec()),
+            review_notes: p.get_review_notes().map(|v| v.to_vec()),
         }
     }
 
@@ -87,6 +95,10 @@ impl PredictionSchema {
             self.position_size_pct,
             self.review_agreed,
             self.review_confidence,
+            self.review_verdict,
+            self.review_decision,
+            self.review_issues,
+            self.review_notes,
         )
     }
 }

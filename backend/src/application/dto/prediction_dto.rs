@@ -25,6 +25,10 @@ pub struct PredictionDto {
     position_size_pct: Option<f64>,
     review_agreed: Option<bool>,
     review_confidence: Option<f64>,
+    review_verdict: Option<String>,
+    review_decision: Option<String>,
+    review_issues: Option<Vec<String>>,
+    review_notes: Option<Vec<String>>,
 }
 
 impl PredictionDto {
@@ -51,6 +55,10 @@ impl PredictionDto {
             position_size_pct: prediction.get_position_size_pct(),
             review_agreed: prediction.get_review_agreed(),
             review_confidence: prediction.get_review_confidence(),
+            review_verdict: prediction.get_review_verdict().map(String::from),
+            review_decision: prediction.get_review_decision().map(String::from),
+            review_issues: prediction.get_review_issues().map(|v| v.to_vec()),
+            review_notes: prediction.get_review_notes().map(|v| v.to_vec()),
         }
     }
 }

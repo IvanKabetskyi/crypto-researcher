@@ -23,6 +23,10 @@ interface PredictionApiResponse {
     position_size_pct?: number;
     review_agreed?: boolean;
     review_confidence?: number;
+    review_verdict?: string;
+    review_decision?: string;
+    review_issues?: string[];
+    review_notes?: string[];
 }
 
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
@@ -47,6 +51,10 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     positionSizePct: data.position_size_pct,
     reviewAgreed: data.review_agreed,
     reviewConfidence: data.review_confidence,
+    reviewVerdict: data.review_verdict,
+    reviewDecision: data.review_decision,
+    reviewIssues: data.review_issues,
+    reviewNotes: data.review_notes,
 });
 
 interface HistoryApiResponse {

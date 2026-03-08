@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Card, CardContent, Typography, Box, Chip, Divider, Collapse, IconButton } from '@mui/material';
+import { Card, CardContent, Typography, Box, Chip, Divider, Collapse, IconButton, List, ListItem, ListItemText } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import VerifiedIcon from '@mui/icons-material/Verified';
 import { Prediction } from 'types/prediction';
 import { ConfidenceBadge } from '../ConfidenceBadge';
 import { formatPrice } from 'utils/formatting';
@@ -60,6 +61,34 @@ const getBiasColor = (bias?: string): string => {
             return '#00e676';
         case 'bearish':
             return '#ff1744';
+        default:
+            return '#9e9e9e';
+    }
+};
+
+const getVerdictColor = (verdict?: string): string => {
+    switch (verdict) {
+        case 'ACCEPT':
+            return '#00e676';
+        case 'ACCEPT_WITH_CAUTION':
+            return '#ffab00';
+        case 'DOWNGRADE':
+            return '#ffa726';
+        case 'REJECT':
+            return '#ff1744';
+        default:
+            return '#9e9e9e';
+    }
+};
+
+const getDecisionColor = (decision?: string): string => {
+    switch (decision) {
+        case 'LONG':
+            return '#00e676';
+        case 'SHORT':
+            return '#ff1744';
+        case 'NO_TRADE':
+            return '#9e9e9e';
         default:
             return '#9e9e9e';
     }
@@ -241,20 +270,89 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                                 </Typography>
                             </Box>
                         )}
-                        {prediction.reviewConfidence != null && (
-                            <Box>
-                                <Typography variant="caption" color="text.secondary">
-                                    Review Score
-                                </Typography>
-                                <Typography
-                                    variant="body2"
-                                    fontWeight={600}
-                                    sx={{ color: prediction.reviewAgreed ? '#00e676' : '#ffab00' }}
-                                >
+                    </Box>
+                )}
+
+                {/* Review AI Section */}
+                {prediction.reviewVerdict && (
+                    <Box
+                        sx={{
+                            mt: 1.5,
+                            mb: 1.5,
+                            p: 1.5,
+                            borderRadius: 1,
+                            backgroundColor: 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${getVerdictColor(prediction.reviewVerdict)}30`,
+                        }}
+                    >
+                        <Box display="flex" alignItems="center" gap={1} mb={1}>
+                            <VerifiedIcon sx={{ fontSize: 16, color: getVerdictColor(prediction.reviewVerdict) }} />
+                            <Typography variant="caption" fontWeight={700} sx={{ color: getVerdictColor(prediction.reviewVerdict) }}>
+                                Review AI
+                            </Typography>
+                            <Chip
+                                label={prediction.reviewVerdict.replace(/_/g, ' ')}
+                                size="small"
+                                sx={{
+                                    height: 20,
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    backgroundColor: `${getVerdictColor(prediction.reviewVerdict)}20`,
+                                    color: getVerdictColor(prediction.reviewVerdict),
+                                }}
+                            />
+                            {prediction.reviewDecision && (
+                                <Chip
+                                    label={prediction.reviewDecision}
+                                    size="small"
+                                    sx={{
+                                        height: 20,
+                                        fontSize: '0.65rem',
+                                        fontWeight: 700,
+                                        backgroundColor: `${getDecisionColor(prediction.reviewDecision)}20`,
+                                        color: getDecisionColor(prediction.reviewDecision),
+                                    }}
+                                />
+                            )}
+                            {prediction.reviewConfidence != null && (
+                                <Typography variant="caption" fontWeight={600} sx={{ ml: 'auto', color: 'text.secondary' }}>
                                     {prediction.reviewConfidence.toFixed(0)}%
-                                    {prediction.reviewAgreed === false && ' (cautious)'}
                                 </Typography>
-                            </Box>
+                            )}
+                        </Box>
+
+                        {prediction.reviewIssues && prediction.reviewIssues.length > 0 && (
+                            <List dense disablePadding sx={{ mb: 0.5 }}>
+                                {prediction.reviewIssues.map((issue, i) => (
+                                    <ListItem key={i} disablePadding sx={{ py: 0 }}>
+                                        <ListItemText
+                                            primary={issue}
+                                            primaryTypographyProps={{
+                                                variant: 'caption',
+                                                color: '#ffa726',
+                                                sx: { lineHeight: 1.4 },
+                                            }}
+                                        />
+                                    </ListItem>
+                                ))}
+                            </List>
+                        )}
+
+                        {prediction.reviewNotes && prediction.reviewNotes.length > 0 && (
+                            <List dense disablePadding>
+                                {prediction.reviewNotes.map((note, i) => (
+                                    <ListItem key={i} disablePadding sx={{ py: 0 }}>
+                                        <ListItemText
+                                            primary={note}
+                                            primaryTypographyProps={{
+                                                variant: 'caption',
+                                                color: 'text.secondary',
+                                                sx: { lineHeight: 1.4 },
+                                            }}
+                                        />
+                                    </ListItem>
+                                ))}
+                            </List>
                         )}
                     </Box>
                 )}
