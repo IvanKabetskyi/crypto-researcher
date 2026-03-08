@@ -124,9 +124,9 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                     {prediction.timeframe && (
                         <Chip label={prediction.timeframe} size="small" variant="outlined" />
                     )}
-                    {prediction.setupType && (
+                    {prediction.riskRewardRatio != null && (
                         <Chip
-                            label={prediction.setupType.replace(/_/g, ' ')}
+                            label={`R:R ${prediction.riskRewardRatio.toFixed(1)}`}
                             size="small"
                             variant="outlined"
                             sx={{ fontSize: '0.7rem' }}
@@ -191,22 +191,12 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                     </Box>
                     <Box>
                         <Typography variant="caption" color="text.secondary">
-                            Target 1
+                            Target
                         </Typography>
                         <Typography variant="body2" fontWeight={600} color="primary">
                             ${formatPrice(prediction.targetPrice)}
                         </Typography>
                     </Box>
-                    {prediction.secondaryTarget && (
-                        <Box>
-                            <Typography variant="caption" color="text.secondary">
-                                Target 2
-                            </Typography>
-                            <Typography variant="body2" fontWeight={600} sx={{ color: '#29b6f6' }}>
-                                ${formatPrice(prediction.secondaryTarget)}
-                            </Typography>
-                        </Box>
-                    )}
                     <Box>
                         <Typography variant="caption" color="text.secondary">
                             Stop Loss
@@ -215,16 +205,6 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                             ${formatPrice(prediction.stopLoss)}
                         </Typography>
                     </Box>
-                    {prediction.invalidation && (
-                        <Box>
-                            <Typography variant="caption" color="text.secondary">
-                                Invalidation
-                            </Typography>
-                            <Typography variant="body2" fontWeight={600} sx={{ color: '#ff5252' }}>
-                                ${formatPrice(prediction.invalidation)}
-                            </Typography>
-                        </Box>
-                    )}
                 </Box>
                 )}
 
@@ -317,29 +297,17 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                     </Box>
                 )}
 
-                {/* Section 5: Risk/Review details */}
-                {!isNoTrade && (prediction.riskRewardRatio || prediction.positionSizePct) && (
+                {/* Section 5: Position size */}
+                {!isNoTrade && prediction.positionSizePct != null && (
                     <Box display="flex" gap={2} mb={1.5}>
-                        {prediction.riskRewardRatio != null && (
-                            <Box>
-                                <Typography variant="caption" color="text.secondary">
-                                    R:R Ratio
-                                </Typography>
-                                <Typography variant="body2" fontWeight={600}>
-                                    {prediction.riskRewardRatio.toFixed(1)}:1
-                                </Typography>
-                            </Box>
-                        )}
-                        {prediction.positionSizePct != null && (
-                            <Box>
-                                <Typography variant="caption" color="text.secondary">
-                                    Position Size
-                                </Typography>
-                                <Typography variant="body2" fontWeight={600}>
-                                    {prediction.positionSizePct.toFixed(0)}%
-                                </Typography>
-                            </Box>
-                        )}
+                        <Box>
+                            <Typography variant="caption" color="text.secondary">
+                                Position Size
+                            </Typography>
+                            <Typography variant="body2" fontWeight={600}>
+                                {prediction.positionSizePct.toFixed(0)}%
+                            </Typography>
+                        </Box>
                     </Box>
                 )}
 
@@ -359,18 +327,18 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                             mb: 1,
                         }}
                     >
-                        {prediction.reasoning}
+                        {prediction.reasoning.split('\n').filter(Boolean)[0] || prediction.reasoning}
                     </Typography>
                 </Collapse>
 
                 <Collapse in={expanded} timeout="auto">
-                    <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ mb: 1, whiteSpace: 'pre-wrap' }}
-                    >
-                        {prediction.reasoning}
-                    </Typography>
+                    <Box sx={{ mb: 1 }}>
+                        {prediction.reasoning.split('\n').filter(Boolean).map((line, i) => (
+                            <Typography key={i} variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                                {line.startsWith('[') ? line : `\u2022 ${line}`}
+                            </Typography>
+                        ))}
+                    </Box>
                 </Collapse>
 
                 <Box display="flex" justifyContent="space-between" alignItems="center">

@@ -12,12 +12,9 @@ export interface Prediction {
     timeframe?: string;
     // Pipeline fields
     marketBias?: string;
-    setupType?: string;
     riskDecision?: string;
     riskRewardRatio?: number;
     executionAction?: string;
-    secondaryTarget?: number;
-    invalidation?: number;
     positionSizePct?: number;
     reviewAgreed?: boolean;
     reviewConfidence?: number;
