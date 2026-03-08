@@ -29,6 +29,11 @@ pub struct PredictionDto {
     review_decision: Option<String>,
     review_issues: Option<Vec<String>>,
     review_notes: Option<Vec<String>>,
+    trend_strength: Option<String>,
+    momentum: Option<String>,
+    volume_profile: Option<String>,
+    derivatives_sentiment: Option<String>,
+    prediction_status: Option<String>,
 }
 
 impl PredictionDto {
@@ -59,6 +64,11 @@ impl PredictionDto {
             review_decision: prediction.get_review_decision().map(String::from),
             review_issues: prediction.get_review_issues().map(|v| v.to_vec()),
             review_notes: prediction.get_review_notes().map(|v| v.to_vec()),
+            trend_strength: prediction.get_trend_strength().map(String::from),
+            momentum: prediction.get_momentum().map(String::from),
+            volume_profile: prediction.get_volume_profile().map(String::from),
+            derivatives_sentiment: prediction.get_derivatives_sentiment().map(String::from),
+            prediction_status: prediction.get_prediction_status().map(String::from),
         }
     }
 }

@@ -268,6 +268,31 @@ impl AIService {
         Ok(text)
     }
 
+    async fn call_model_with_retry(
+        &self,
+        model: &str,
+        system: &str,
+        user_content: &str,
+        max_tokens: u32,
+        prefill: Option<&str>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let result = self.call_model(model, system, user_content, max_tokens, prefill).await;
+        match result {
+            Ok(raw) => Ok(raw),
+            Err(e) => {
+                tracing::warn!("First AI call failed, retrying with repair prompt: {}", e);
+                let repair_system = format!(
+                    "{}\n\nYour previous response was invalid. Error: {}\n\
+                    Return the same result as exactly one valid JSON object.\n\
+                    No markdown. No commentary. No trailing text.\n\
+                    All strings closed. All braces balanced.",
+                    system, e
+                );
+                self.call_model(model, &repair_system, user_content, max_tokens, prefill).await
+            }
+        }
+    }
+
     fn parse_json_response(raw: &str, prefill_key: &str) -> String {
         let cleaned = raw
             .trim()
@@ -313,7 +338,12 @@ impl AIService {
             5. Volume profile (confirming/diverging, any spikes)\n\
             6. Derivatives sentiment (funding rate, long/short ratio, order book pressure)\n\
             7. Brief summary of the overall market picture\n\n\
-            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            OUTPUT RULES:\n\
+            - Return exactly one valid JSON object\n\
+            - No markdown, no code fences, no commentary\n\
+            - All strings must be closed, all braces balanced\n\
+            - Keep text fields under 100 characters\n\
+            - Use arrays of short strings, not long paragraphs\n\n\
             {{\"analyses\": [{{\"symbol\": \"BTCUSDT\", \"marketBias\": \"bullish|bearish|neutral\", \
             \"trendStrength\": \"strong|moderate|weak\", \
             \"keyLevels\": {{\"support\": number, \"resistance\": number}}, \
@@ -359,7 +389,12 @@ impl AIService {
             - 45-60: moderate, 2-3 indicators aligned\n\
             - 60-75: strong, most indicators aligned\n\
             - 75-85: very strong, everything aligned\n\n\
-            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            OUTPUT RULES:\n\
+            - Return exactly one valid JSON object\n\
+            - No markdown, no code fences, no commentary\n\
+            - All strings must be closed, all braces balanced\n\
+            - Keep text fields under 100 characters\n\
+            - Use arrays of short strings, not long paragraphs\n\n\
             {{\"signals\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long|short|NO_TRADE\", \
             \"confidence\": 0-100, \"setupType\": \"BREAKOUT|MEAN_REVERSION|SQUEEZE|CONTINUATION|NO_SETUP\", \
             \"entryPrice\": number, \"targetPrice\": number, \"secondaryTarget\": number, \
@@ -397,7 +432,12 @@ impl AIService {
             - REDUCE_SIZE: trade is okay but risk warrants smaller position (set positionSizePct to 25-75)\n\
             - REJECT: risk too high, poor setup, or conflicting signals\n\n\
             For NO_TRADE signals, always set decision to REJECT.\n\n\
-            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            OUTPUT RULES:\n\
+            - Return exactly one valid JSON object\n\
+            - No markdown, no code fences, no commentary\n\
+            - All strings must be closed, all braces balanced\n\
+            - Keep text fields under 100 characters\n\
+            - Use arrays of short strings, not long paragraphs\n\n\
             {{\"assessments\": [{{\"symbol\": \"BTCUSDT\", \"decision\": \"APPROVE|REDUCE_SIZE|REJECT\", \
             \"riskRewardRatio\": number, \"positionSizePct\": 0-100, \
             \"riskNotes\": \"explanation of risk assessment\"}}]}}",
@@ -437,7 +477,12 @@ impl AIService {
                - SKIP_TRADE: despite approval, optimizer sees a reason to skip\n\
             3. Adjust entry/target/stop if you see a better level based on the full picture\n\
             4. Set final position size percentage (0-100)\n\n\
-            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            OUTPUT RULES:\n\
+            - Return exactly one valid JSON object\n\
+            - No markdown, no code fences, no commentary\n\
+            - All strings must be closed, all braces balanced\n\
+            - Keep text fields under 100 characters\n\
+            - Use arrays of short strings, not long paragraphs\n\n\
             {{\"strategies\": [{{\"symbol\": \"BTCUSDT\", \
             \"executionAction\": \"ENTER_NOW|WAIT_CONFIRMATION|SCALE_IN|REDUCED_SIZE|SKIP_TRADE\", \
             \"adjustedEntry\": number, \"adjustedTarget\": number, \"adjustedStop\": number, \
@@ -515,8 +560,13 @@ impl AIService {
             - marketBias can remain LONG while executionPlan is WAIT_CONFIRMATION.\n\
             - marketBias can remain SHORT while riskDecision is REDUCE_SIZE.\n\
             - Only set finalDecision to NO_TRADE if the setup should truly not be taken.\n\n\
-            For each symbol, output your review.\n\
-            OUTPUT: Valid JSON only. No markdown, no code fences.\n\
+            For each symbol, output your review.\n\n\
+            OUTPUT RULES:\n\
+            - Return exactly one valid JSON object\n\
+            - No markdown, no code fences, no commentary\n\
+            - All strings must be closed, all braces balanced\n\
+            - Keep text fields under 100 characters\n\
+            - Use arrays of short strings, not long paragraphs\n\n\
             {{\"reviews\": [{{\"reviewResult\": {{\"consistencyStatus\": \"PASS|WARNING|FAIL\", \
             \"finalVerdict\": \"ACCEPT|ACCEPT_WITH_CAUTION|DOWNGRADE|REJECT\", \
             \"finalDecision\": \"LONG|SHORT|NO_TRADE\", \"confidence\": 0-100}}, \
@@ -561,7 +611,7 @@ impl AIService {
         let step1_system = Self::build_market_analyzer_prompt(timeframe);
         tracing::info!("Pipeline Step 1: Market Analyzer ({})", self.model);
         let step1_raw = self
-            .call_model(&self.model, &step1_system, &user_content, 4096, Some("{\"analyses\":["))
+            .call_model_with_retry(&self.model, &step1_system, &user_content, 4096, Some("{\"analyses\":["))
             .await?;
         let step1_json = Self::parse_json_response(&step1_raw, "analyses");
         tracing::info!("Step 1 complete: {} chars", step1_json.len());
@@ -569,12 +619,22 @@ impl AIService {
         let analyses: Vec<MarketAnalysis> = match serde_json::from_str::<AnalysisResponse>(&step1_json) {
             Ok(r) => r.analyses.unwrap_or_default(),
             Err(e) => {
-                let snippet = &step1_raw[..step1_raw.len().min(300)];
-                tracing::error!("Step 1 parse failed: {}. Raw: {}", e, snippet);
-                return Err(format!(
-                    "Market Analyzer returned unparseable response ({}). AI said: {}",
-                    e, snippet
-                ).into());
+                tracing::warn!("Step 1 parse failed ({}), retrying...", e);
+                let retry_raw = self
+                    .call_model_with_retry(&self.model, &step1_system, &user_content, 4096, Some("{\"analyses\":["))
+                    .await?;
+                let retry_json = Self::parse_json_response(&retry_raw, "analyses");
+                match serde_json::from_str::<AnalysisResponse>(&retry_json) {
+                    Ok(r) => r.analyses.unwrap_or_default(),
+                    Err(e2) => {
+                        let snippet = &retry_raw[..retry_raw.len().min(300)];
+                        tracing::error!("Step 1 retry parse failed: {}. Raw: {}", e2, snippet);
+                        return Err(format!(
+                            "Market Analyzer returned unparseable response ({}). AI said: {}",
+                            e2, snippet
+                        ).into());
+                    }
+                }
             }
         };
 
@@ -594,7 +654,7 @@ impl AIService {
         let step2_system = Self::build_signal_generator_prompt(&step1_json, timeframe);
         tracing::info!("Pipeline Step 2: Signal Generator ({})", self.model);
         let step2_raw = self
-            .call_model(&self.model, &step2_system, &user_content, 4096, Some("{\"signals\":["))
+            .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\"signals\":["))
             .await?;
         let step2_json = Self::parse_json_response(&step2_raw, "signals");
         tracing::info!("Step 2 complete: {} chars", step2_json.len());
@@ -602,12 +662,22 @@ impl AIService {
         let signals: Vec<SignalOutput> = match serde_json::from_str::<SignalResponse>(&step2_json) {
             Ok(r) => r.signals.unwrap_or_default(),
             Err(e) => {
-                let snippet = &step2_raw[..step2_raw.len().min(300)];
-                tracing::error!("Step 2 parse failed: {}. Raw: {}", e, snippet);
-                return Err(format!(
-                    "Signal Generator returned unparseable response ({}). AI said: {}",
-                    e, snippet
-                ).into());
+                tracing::warn!("Step 2 parse failed ({}), retrying...", e);
+                let retry_raw = self
+                    .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\"signals\":["))
+                    .await?;
+                let retry_json = Self::parse_json_response(&retry_raw, "signals");
+                match serde_json::from_str::<SignalResponse>(&retry_json) {
+                    Ok(r) => r.signals.unwrap_or_default(),
+                    Err(e2) => {
+                        let snippet = &retry_raw[..retry_raw.len().min(300)];
+                        tracing::error!("Step 2 retry parse failed: {}. Raw: {}", e2, snippet);
+                        return Err(format!(
+                            "Signal Generator returned unparseable response ({}). AI said: {}",
+                            e2, snippet
+                        ).into());
+                    }
+                }
             }
         };
 
@@ -734,6 +804,10 @@ impl AIService {
                 // Get market analysis
                 let analysis = analyses.iter().find(|a| a.symbol == *symbol);
                 let market_bias = analysis.and_then(|a| a.market_bias.clone());
+                let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
+                let momentum = analysis.and_then(|a| a.momentum.clone());
+                let volume_profile = analysis.and_then(|a| a.volume_profile.clone());
+                let derivatives_sentiment = analysis.and_then(|a| a.derivatives_sentiment.clone());
 
                 // Get risk assessment
                 let risk = risks.iter().find(|r| r.symbol == *symbol);
@@ -973,6 +1047,17 @@ impl AIService {
                 let review_issues_opt = if review_issues.is_empty() { None } else { Some(review_issues) };
                 let review_notes_opt = if review_notes_vec.is_empty() { None } else { Some(review_notes_vec) };
 
+                // Derive unified prediction status
+                let prediction_status = match (review_verdict_str.as_deref(), execution_action.as_deref()) {
+                    (Some("REJECT"), _) => Some("REJECTED".into()),
+                    (Some("DOWNGRADE"), _) => Some("DOWNGRADED".into()),
+                    (Some("ACCEPT_WITH_CAUTION"), _) => Some("ACCEPT_WITH_CAUTION".into()),
+                    (_, Some("WAIT_CONFIRMATION")) => Some("WAIT_CONFIRMATION".into()),
+                    (_, Some("REDUCED_SIZE")) => Some("REDUCED_SIZE".into()),
+                    (Some("ACCEPT"), _) => Some("APPROVED".into()),
+                    _ => Some("APPROVED".into()),
+                };
+
                 let prediction = Prediction::new(
                     symbol,
                     direction,
@@ -1002,6 +1087,11 @@ impl AIService {
                     review_decision_str,
                     review_issues_opt,
                     review_notes_opt,
+                    trend_strength,
+                    momentum,
+                    volume_profile,
+                    derivatives_sentiment,
+                    prediction_status,
                 );
 
                 tracing::info!(

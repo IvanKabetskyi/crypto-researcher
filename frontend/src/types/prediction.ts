@@ -25,4 +25,10 @@ export interface Prediction {
     reviewDecision?: string;
     reviewIssues?: string[];
     reviewNotes?: string[];
+    // Market context fields
+    trendStrength?: 'weak' | 'moderate' | 'strong';
+    momentum?: 'accelerating' | 'decelerating' | 'neutral';
+    volumeProfile?: 'confirming' | 'weak' | 'divergent';
+    derivativesSentiment?: 'bullish' | 'bearish' | 'neutral';
+    predictionStatus?: string;
 }

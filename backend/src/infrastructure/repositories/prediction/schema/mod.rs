@@ -35,6 +35,11 @@ pub struct PredictionSchema {
     pub review_decision: Option<String>,
     pub review_issues: Option<Vec<String>>,
     pub review_notes: Option<Vec<String>>,
+    pub trend_strength: Option<String>,
+    pub momentum: Option<String>,
+    pub volume_profile: Option<String>,
+    pub derivatives_sentiment: Option<String>,
+    pub prediction_status: Option<String>,
 }
 
 impl PredictionSchema {
@@ -66,6 +71,11 @@ impl PredictionSchema {
             review_decision: p.get_review_decision().map(String::from),
             review_issues: p.get_review_issues().map(|v| v.to_vec()),
             review_notes: p.get_review_notes().map(|v| v.to_vec()),
+            trend_strength: p.get_trend_strength().map(String::from),
+            momentum: p.get_momentum().map(String::from),
+            volume_profile: p.get_volume_profile().map(String::from),
+            derivatives_sentiment: p.get_derivatives_sentiment().map(String::from),
+            prediction_status: p.get_prediction_status().map(String::from),
         }
     }
 
@@ -99,6 +109,11 @@ impl PredictionSchema {
             self.review_decision,
             self.review_issues,
             self.review_notes,
+            self.trend_strength,
+            self.momentum,
+            self.volume_profile,
+            self.derivatives_sentiment,
+            self.prediction_status,
         )
     }
 }

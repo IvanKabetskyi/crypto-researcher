@@ -29,6 +29,12 @@ pub struct Prediction {
     review_decision: Option<String>,
     review_issues: Option<Vec<String>>,
     review_notes: Option<Vec<String>>,
+    // Market context fields
+    trend_strength: Option<String>,
+    momentum: Option<String>,
+    volume_profile: Option<String>,
+    derivatives_sentiment: Option<String>,
+    prediction_status: Option<String>,
 }
 
 impl Prediction {
@@ -74,6 +80,11 @@ impl Prediction {
             review_decision: None,
             review_issues: None,
             review_notes: None,
+            trend_strength: None,
+            momentum: None,
+            volume_profile: None,
+            derivatives_sentiment: None,
+            prediction_status: None,
         }
     }
 
@@ -93,6 +104,11 @@ impl Prediction {
         review_decision: Option<String>,
         review_issues: Option<Vec<String>>,
         review_notes: Option<Vec<String>>,
+        trend_strength: Option<String>,
+        momentum: Option<String>,
+        volume_profile: Option<String>,
+        derivatives_sentiment: Option<String>,
+        prediction_status: Option<String>,
     ) -> Self {
         self.market_bias = market_bias;
         self.setup_type = setup_type;
@@ -108,6 +124,11 @@ impl Prediction {
         self.review_decision = review_decision;
         self.review_issues = review_issues;
         self.review_notes = review_notes;
+        self.trend_strength = trend_strength;
+        self.momentum = momentum;
+        self.volume_profile = volume_profile;
+        self.derivatives_sentiment = derivatives_sentiment;
+        self.prediction_status = prediction_status;
         self
     }
 
@@ -213,5 +234,25 @@ impl Prediction {
 
     pub fn get_review_notes(&self) -> Option<&[String]> {
         self.review_notes.as_deref()
+    }
+
+    pub fn get_trend_strength(&self) -> Option<&str> {
+        self.trend_strength.as_deref()
+    }
+
+    pub fn get_momentum(&self) -> Option<&str> {
+        self.momentum.as_deref()
+    }
+
+    pub fn get_volume_profile(&self) -> Option<&str> {
+        self.volume_profile.as_deref()
+    }
+
+    pub fn get_derivatives_sentiment(&self) -> Option<&str> {
+        self.derivatives_sentiment.as_deref()
+    }
+
+    pub fn get_prediction_status(&self) -> Option<&str> {
+        self.prediction_status.as_deref()
     }
 }

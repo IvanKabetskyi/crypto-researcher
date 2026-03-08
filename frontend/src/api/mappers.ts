@@ -27,6 +27,11 @@ interface PredictionApiResponse {
     review_decision?: string;
     review_issues?: string[];
     review_notes?: string[];
+    trend_strength?: string;
+    momentum?: string;
+    volume_profile?: string;
+    derivatives_sentiment?: string;
+    prediction_status?: string;
 }
 
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
@@ -55,6 +60,11 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     reviewDecision: data.review_decision,
     reviewIssues: data.review_issues,
     reviewNotes: data.review_notes,
+    trendStrength: data.trend_strength as Prediction['trendStrength'],
+    momentum: data.momentum as Prediction['momentum'],
+    volumeProfile: data.volume_profile as Prediction['volumeProfile'],
+    derivativesSentiment: data.derivatives_sentiment as Prediction['derivativesSentiment'],
+    predictionStatus: data.prediction_status,
 });
 
 interface HistoryApiResponse {
