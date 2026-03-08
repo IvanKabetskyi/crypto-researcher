@@ -948,46 +948,61 @@ impl AIService {
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
         // ── STEP 2: Setup Classifier ──────────────────────────────────────
-        // Compute deterministic features from Step 1 analysis + market snapshot
-        let first_analysis = analyses.first();
-        let primary_symbol = first_analysis
-            .map(|a| a.symbol.clone())
-            .or_else(|| snapshot.first_symbol())
-            .unwrap_or_else(|| "UNKNOWN".into());
+        // Compute features for ALL analyzed symbols, classify the best one
+        let mut all_features: Vec<SetupFeatures> = Vec::new();
+        let mut no_feature_symbols: Vec<String> = Vec::new();
 
-        let features_opt = first_analysis.and_then(|analysis| {
-            Self::compute_setup_features(&primary_symbol, analysis, snapshot, timeframe)
-        });
-
-        // If features can't be computed (neutral bias or insufficient data) → NO_TRADE
-        let features = match features_opt {
-            Some(f) => f,
-            None => {
-                tracing::info!("No directional bias or insufficient data — returning NO_TRADE");
-                let analysis = first_analysis;
-                let market_bias = analysis.and_then(|a| a.market_bias.clone());
-                let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
-                let momentum = analysis.and_then(|a| a.momentum.clone());
-                let volume_profile = analysis.and_then(|a| a.volume_profile.clone());
-                let derivatives_sentiment = analysis.and_then(|a| a.derivatives_sentiment.clone());
-                let market_signals = analysis.and_then(|a| a.signals.clone());
-
-                let fallback = Prediction::new(
-                    &primary_symbol, "NO_TRADE", 0.0,
-                    "No directional bias detected — market is neutral", 0.0, 0.0, 0.0,
-                    None, None, None, None, Some(timeframe.to_string()),
-                ).with_pipeline(
-                    market_bias, None, None, None, None, None, None, None,
-                    None, None, None, None, None, None,
-                    trend_strength, momentum, volume_profile, derivatives_sentiment,
-                    Some("REJECTED".into()),
-                    market_signals,
-                    Some("No directional bias — market is neutral".into()),
-                    None, None,
-                );
-                return Ok(vec![fallback]);
+        for analysis in &analyses {
+            match Self::compute_setup_features(&analysis.symbol, analysis, snapshot, timeframe) {
+                Some(f) => {
+                    tracing::info!("{}: {} confirmations, R:R {:.2}", f.symbol, f.confirmations_count, f.risk_reward);
+                    all_features.push(f);
+                }
+                None => {
+                    tracing::info!("{}: no directional signal — skipping", analysis.symbol);
+                    no_feature_symbols.push(analysis.symbol.clone());
+                }
             }
-        };
+        }
+
+        // If no symbol produced features → return NO_TRADE for all
+        if all_features.is_empty() {
+            tracing::info!("No symbols have directional bias — returning NO_TRADE");
+            let first_analysis = analyses.first();
+            let fallback_symbol = first_analysis
+                .map(|a| a.symbol.clone())
+                .or_else(|| snapshot.first_symbol())
+                .unwrap_or_else(|| "UNKNOWN".into());
+            let market_bias = first_analysis.and_then(|a| a.market_bias.clone());
+            let trend_strength = first_analysis.and_then(|a| a.trend_strength.clone());
+            let momentum = first_analysis.and_then(|a| a.momentum.clone());
+            let volume_profile = first_analysis.and_then(|a| a.volume_profile.clone());
+            let derivatives_sentiment = first_analysis.and_then(|a| a.derivatives_sentiment.clone());
+            let market_signals = first_analysis.and_then(|a| a.signals.clone());
+
+            let fallback = Prediction::new(
+                &fallback_symbol, "NO_TRADE", 0.0,
+                "No directional bias detected across all pairs", 0.0, 0.0, 0.0,
+                None, None, None, None, Some(timeframe.to_string()),
+            ).with_pipeline(
+                market_bias, None, None, None, None, None, None, None,
+                None, None, None, None, None, None,
+                trend_strength, momentum, volume_profile, derivatives_sentiment,
+                Some("REJECTED".into()),
+                market_signals,
+                Some("No directional bias across all pairs".into()),
+                None, None,
+            );
+            return Ok(vec![fallback]);
+        }
+
+        // Pick the best setup: most confirmations, then highest R:R
+        all_features.sort_by(|a, b| {
+            b.confirmations_count.cmp(&a.confirmations_count)
+                .then(b.risk_reward.partial_cmp(&a.risk_reward).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        let features = all_features.remove(0);
+        tracing::info!("Best setup: {} {} with {} confirmations", features.symbol, features.intended_direction, features.confirmations_count);
 
         let features_json = serde_json::to_string_pretty(&features)
             .unwrap_or_else(|_| "{}".into());
@@ -1016,7 +1031,7 @@ impl AIService {
                     Err(e2) => {
                         tracing::error!("Step 2 retry parse failed: {}. Returning fallback.", e2);
                         let fallback = Prediction::new(
-                            &primary_symbol, "NO_TRADE", 0.0,
+                            &features.symbol, "NO_TRADE", 0.0,
                             "Setup classifier unavailable", 0.0, 0.0, 0.0,
                             None, None, None, None, Some(timeframe.to_string()),
                         ).with_pipeline(
@@ -1052,13 +1067,13 @@ impl AIService {
         // Re-serialize signals as {"signals":[...]} for downstream stages 3-5
         let step2_json = serde_json::to_string(&serde_json::json!({"signals": signals}))
             .unwrap_or_else(|_| "{}".into());
-        tracing::info!("Step 2 complete: {} chars", step2_json.len());
+        tracing::info!("Step 2 complete: {} signals, {} chars", signals.len(), step2_json.len());
 
         // Check for NO_TRADE — skip stages 3-5, return REJECTED prediction
         let signal = &signals[0];
         if signal.decision.as_deref() == Some("NO_TRADE") {
-            tracing::info!("Classifier returned NO_TRADE — returning REJECTED prediction");
-            let analysis = first_analysis;
+            tracing::info!("Classifier returned NO_TRADE for {} — returning REJECTED prediction", signal.symbol);
+            let analysis = analyses.iter().find(|a| a.symbol == signal.symbol).or(analyses.first());
             let market_bias = analysis.and_then(|a| a.market_bias.clone());
             let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
             let momentum = analysis.and_then(|a| a.momentum.clone());
