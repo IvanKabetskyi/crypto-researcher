@@ -425,12 +425,43 @@ impl AIService {
 
         let current_price = ticker.get_last_price();
         let market_bias = analysis.market_bias.as_deref().unwrap_or("neutral");
+        let trend = analysis.trend_strength.as_deref().unwrap_or("weak");
+        let momentum_val = analysis.momentum.as_deref().unwrap_or("neutral");
+        let volume_val = analysis.volume_profile.as_deref().unwrap_or("weak");
+        let derivs_val = analysis.derivatives_sentiment.as_deref().unwrap_or("neutral");
 
-        // Determine intended direction from market bias
+        // Determine intended direction: use market_bias first, then infer from
+        // trend/momentum/derivatives if bias is neutral
         let intended_direction = match market_bias {
             "bullish" => "LONG",
             "bearish" => "SHORT",
-            _ => return None, // neutral → no setup to classify
+            _ => {
+                // Infer direction from secondary signals
+                let mut bull_score = 0i32;
+                let mut bear_score = 0i32;
+
+                match trend {
+                    "strong" | "moderate" => {
+                        // Check price action for trend direction
+                        let closes: Vec<f64> = klines.iter().map(|k| k.get_close()).collect();
+                        let n = closes.len();
+                        if n >= 2 && closes[n - 1] > closes[0] {
+                            bull_score += 1;
+                        } else {
+                            bear_score += 1;
+                        }
+                    }
+                    _ => {}
+                }
+                if momentum_val == "accelerating" { bull_score += 1; }
+                if momentum_val == "decelerating" || momentum_val == "exhausted" { bear_score += 1; }
+                if derivs_val == "bullish" { bull_score += 1; }
+                if derivs_val == "bearish" { bear_score += 1; }
+
+                if bull_score > bear_score { "LONG" }
+                else if bear_score > bull_score { "SHORT" }
+                else { return None; } // truly no signal
+            }
         };
 
         // Compute support/resistance from klines
@@ -484,7 +515,7 @@ impl AIService {
             0.0
         };
 
-        // Volatility spike: last candle volume vs avg
+        // Volatility spike: last candle volume vs avg (use 3x threshold, 2x was too sensitive)
         let vol_spike = if n >= 2 {
             let last_vol = volumes[n - 1];
             let avg_vol = if n >= 6 {
@@ -492,7 +523,7 @@ impl AIService {
             } else {
                 volumes[..n - 1].iter().sum::<f64>() / (n - 1) as f64
             };
-            if avg_vol > 0.0 { last_vol / avg_vol > 2.0 } else { false }
+            if avg_vol > 0.0 { last_vol / avg_vol > 3.0 } else { false }
         } else {
             false
         };
@@ -503,9 +534,9 @@ impl AIService {
         let long_ratio = derivs.map(|d| d.get_long_ratio()).unwrap_or(0.5);
         let short_ratio = derivs.map(|d| d.get_short_ratio()).unwrap_or(0.5);
 
-        let leverage_risk = funding_rate.abs() > 0.005;
-        let liquidation_risk = (intended_direction == "LONG" && long_ratio > 0.65 && funding_rate > 0.003)
-            || (intended_direction == "SHORT" && short_ratio > 0.65 && funding_rate < -0.003);
+        let leverage_risk = funding_rate.abs() > 0.01;
+        let liquidation_risk = (intended_direction == "LONG" && long_ratio > 0.70 && funding_rate > 0.005)
+            || (intended_direction == "SHORT" && short_ratio > 0.70 && funding_rate < -0.005);
 
         // RSI
         let rsi_period = match timeframe {
@@ -515,38 +546,58 @@ impl AIService {
         };
         let rsi = compute_rsi_for_features(&closes, rsi_period);
 
-        // Count confirmations
-        let mut confirmations = Vec::new();
-        let trend = analysis.trend_strength.as_deref().unwrap_or("weak");
-        let momentum_val = analysis.momentum.as_deref().unwrap_or("neutral");
-        let volume_val = analysis.volume_profile.as_deref().unwrap_or("weak");
-        let derivs_val = analysis.derivatives_sentiment.as_deref().unwrap_or("neutral");
+        // SMA crossover
+        let sma_fast_period = if n >= 10 { 10 } else { n };
+        let sma_slow_period = if n >= 20 { 20 } else { n };
+        let sma_fast = closes[n - sma_fast_period..].iter().sum::<f64>() / sma_fast_period as f64;
+        let sma_slow = closes[n - sma_slow_period..].iter().sum::<f64>() / sma_slow_period as f64;
 
+        // Count confirmations (broader criteria)
+        let mut confirmations = Vec::new();
+
+        // 1. Trend alignment
         if trend == "strong" || trend == "moderate" {
             confirmations.push("trend_aligned".to_string());
         }
-        if (intended_direction == "LONG" && momentum_val == "accelerating")
-            || (intended_direction == "SHORT" && momentum_val == "decelerating")
+        // 2. Market bias matches direction
+        if (intended_direction == "LONG" && market_bias == "bullish")
+            || (intended_direction == "SHORT" && market_bias == "bearish")
+        {
+            confirmations.push("bias_aligned".to_string());
+        }
+        // 3. Momentum (broader: accelerating=bullish, decelerating/exhausted=bearish)
+        if (intended_direction == "LONG" && (momentum_val == "accelerating" || momentum_val == "steady"))
+            || (intended_direction == "SHORT" && (momentum_val == "decelerating" || momentum_val == "exhausted"))
         {
             confirmations.push("momentum_confirming".to_string());
         }
+        // 4. Volume
         if volume_val == "confirming" {
             confirmations.push("volume_confirming".to_string());
         }
+        // 5. Derivatives sentiment
         if (intended_direction == "LONG" && derivs_val == "bullish")
             || (intended_direction == "SHORT" && derivs_val == "bearish")
         {
             confirmations.push("derivatives_aligned".to_string());
         }
-        if (intended_direction == "LONG" && rsi < 35.0)
-            || (intended_direction == "SHORT" && rsi > 65.0)
+        // 6. RSI favorable (wider range: < 45 for long, > 55 for short)
+        if (intended_direction == "LONG" && rsi < 45.0)
+            || (intended_direction == "SHORT" && rsi > 55.0)
         {
-            confirmations.push("rsi_extreme".to_string());
+            confirmations.push("rsi_favorable".to_string());
         }
-        if (intended_direction == "LONG" && dist_to_support < 1.0)
-            || (intended_direction == "SHORT" && dist_to_resistance < 1.0)
+        // 7. SMA crossover
+        if (intended_direction == "LONG" && sma_fast > sma_slow)
+            || (intended_direction == "SHORT" && sma_fast < sma_slow)
         {
-            confirmations.push("near_key_level".to_string());
+            confirmations.push("sma_crossover".to_string());
+        }
+        // 8. Price position relative to SMAs
+        if (intended_direction == "LONG" && current_price > sma_fast)
+            || (intended_direction == "SHORT" && current_price < sma_fast)
+        {
+            confirmations.push("price_above_sma".to_string());
         }
 
         Some(SetupFeatures {
@@ -590,29 +641,31 @@ impl AIService {
             TIMEFRAME: {timeframe} | HORIZON: {time_horizon}\n\n\
             ---\n\
             HARD REJECTION RULES (mandatory, override everything):\n\
-            1. riskReward < 1.5 → NO_TRADE, status REJECTED\n\
-            2. confirmationsCount < 3 → NO_TRADE, status REJECTED\n\
-            3. volatilitySpike == true → NO_TRADE, status REJECTED\n\
-            4. leverageRisk == true AND liquidationRisk == true → NO_TRADE, status REJECTED\n\
-            5. LONG and distanceToResistancePct < 0.3 → NO_TRADE, status REJECTED\n\
-            6. SHORT and distanceToSupportPct < 0.3 → NO_TRADE, status REJECTED\n\n\
+            1. riskReward < 1.2 → NO_TRADE, status REJECTED\n\
+            2. confirmationsCount < 2 → NO_TRADE, status REJECTED\n\
+            3. volatilitySpike == true AND leverageRisk == true → NO_TRADE, status REJECTED\n\
+            4. liquidationRisk == true → NO_TRADE, status REJECTED\n\n\
             If ANY hard rule triggers → immediately return NO_TRADE with the rule as the reason.\n\n\
             ---\n\
             CLASSIFICATION (only if no hard rule triggered):\n\n\
-            APPROVED (confidence 75-95):\n\
-            - riskReward >= 2.0\n\
+            APPROVED (confidence 70-95):\n\
+            - riskReward >= 1.8\n\
             - confirmationsCount >= 4\n\
-            - no leverageRisk, no liquidationRisk\n\n\
-            REDUCED_SIZE (confidence 55-74):\n\
-            - riskReward >= 1.5 but < 2.0\n\
-            - OR confirmationsCount == 3\n\
-            - OR leverageRisk == true (without liquidationRisk)\n\n\
-            WAIT_CONFIRMATION (confidence 40-54):\n\
+            - no liquidationRisk\n\n\
+            REDUCED_SIZE (confidence 50-69):\n\
+            - riskReward >= 1.5\n\
+            - confirmationsCount >= 3\n\
+            - OR leverageRisk == true\n\n\
+            ACCEPT_WITH_CAUTION (confidence 40-54):\n\
+            - confirmationsCount == 2\n\
+            - OR riskReward between 1.2 and 1.5\n\
+            - OR volatilitySpike == true (without leverageRisk)\n\n\
+            WAIT_CONFIRMATION (confidence 30-39):\n\
             - Setup direction is valid but timing uncertain\n\
-            - Momentum is neutral or conflicting\n\n\
+            - Momentum is neutral or conflicting with only 2 confirmations\n\n\
             ---\n\
             CONFLUENCE SCORE:\n\
-            confluenceScore = confirmationsCount / 6.0 (capped at 1.0)\n\
+            confluenceScore = confirmationsCount / 8.0 (capped at 1.0)\n\
             This is a deterministic value. Compute it exactly.\n\n\
             ---\n\
             OUTPUT FORMAT:\n\
@@ -621,7 +674,7 @@ impl AIService {
             reasoning and issues must be arrays of short strings.\n\n\
             OUTPUT SCHEMA:\n\
             {{\"symbol\":\"...\",\"decision\":\"LONG|SHORT|NO_TRADE\",\
-            \"status\":\"APPROVED|REDUCED_SIZE|WAIT_CONFIRMATION|REJECTED\",\
+            \"status\":\"APPROVED|REDUCED_SIZE|ACCEPT_WITH_CAUTION|WAIT_CONFIRMATION|REJECTED\",\
             \"confidence\":0-100,\"riskReward\":{rr},\
             \"confluenceScore\":0.0-1.0,\
             \"reasoning\":[\"factor 1\",\"factor 2\",...],\
