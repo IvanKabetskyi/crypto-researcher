@@ -195,6 +195,10 @@ impl MarketSnapshot {
         }
     }
 
+    pub fn first_symbol(&self) -> Option<String> {
+        self.tickers.first().map(|t| t.get_symbol().to_string())
+    }
+
     pub fn tickers_to_json(&self) -> String {
         let entries: Vec<String> = self
             .tickers

@@ -1,9 +1,9 @@
 export const statusConfig: Record<string, { label: string; color: string; description: string }> = {
     APPROVED: { label: 'Approved', color: '#00e676', description: 'Trade idea is acceptable' },
     ACCEPT_WITH_CAUTION: { label: 'Caution', color: '#ffab00', description: 'Valid direction, moderate risks' },
-    WAIT_CONFIRMATION: { label: 'Wait for Confirmation', color: '#ffa726', description: 'Do not enter yet' },
+    WAIT_CONFIRMATION: { label: 'Wait for Confirmation', color: '#2196f3', description: 'Do not enter yet' },
     REDUCED_SIZE: { label: 'Reduced Size', color: '#ffa726', description: 'Enter smaller than usual' },
-    DOWNGRADED: { label: 'Downgraded', color: '#ff7043', description: 'Setup got weaker' },
+    DOWNGRADED: { label: 'Downgraded', color: '#9c27b0', description: 'Setup got weaker' },
     REJECTED: { label: 'Rejected', color: '#ff1744', description: 'Do not take this setup' },
 };
 

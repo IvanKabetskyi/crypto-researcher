@@ -1,7 +1,7 @@
 export interface Prediction {
     id: string;
     symbol: string;
-    direction: 'long' | 'short';
+    direction: 'long' | 'short' | 'NO_TRADE';
     confidence: number;
     reasoning: string;
     entryPrice: number;
@@ -31,4 +31,6 @@ export interface Prediction {
     volumeProfile?: 'confirming' | 'weak' | 'divergent';
     derivativesSentiment?: 'bullish' | 'bearish' | 'neutral';
     predictionStatus?: string;
+    marketSignals?: string[];
+    predictionReason?: string;
 }

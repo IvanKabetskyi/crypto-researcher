@@ -34,6 +34,8 @@ pub struct PredictionDto {
     volume_profile: Option<String>,
     derivatives_sentiment: Option<String>,
     prediction_status: Option<String>,
+    market_signals: Option<Vec<String>>,
+    prediction_reason: Option<String>,
 }
 
 impl PredictionDto {
@@ -69,6 +71,8 @@ impl PredictionDto {
             volume_profile: prediction.get_volume_profile().map(String::from),
             derivatives_sentiment: prediction.get_derivatives_sentiment().map(String::from),
             prediction_status: prediction.get_prediction_status().map(String::from),
+            market_signals: prediction.get_market_signals().map(|v| v.to_vec()),
+            prediction_reason: prediction.get_prediction_reason().map(String::from),
         }
     }
 }

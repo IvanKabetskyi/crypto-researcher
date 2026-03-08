@@ -35,8 +35,9 @@ const getOutcomeColor = (outcome: Prediction['outcome']): string => {
 
 export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) => {
     const [expanded, setExpanded] = useState(false);
-    const isLong = prediction.direction === 'long';
-    const directionColor = isLong ? '#00e676' : '#ff1744';
+    const isNoTrade = prediction.direction === 'NO_TRADE';
+    const isLong = prediction.direction === 'long' || prediction.direction === 'LONG';
+    const directionColor = isNoTrade ? '#9e9e9e' : (isLong ? '#00e676' : '#ff1744');
     const status = getStatusConfig(prediction.predictionStatus);
     const isRejected = prediction.predictionStatus === 'REJECTED';
 
@@ -63,7 +64,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                 backgroundColor: 'background.paper',
                 transition: 'transform 0.2s, box-shadow 0.2s',
                 cursor: 'pointer',
-                opacity: isRejected ? 0.7 : 1,
+                opacity: (isRejected || isNoTrade) ? 0.7 : 1,
                 '&:hover': {
                     transform: 'translateY(-2px)',
                     boxShadow: `0 4px 20px rgba(${isLong ? '0, 230, 118' : '255, 23, 68'}, 0.15)`,
@@ -79,7 +80,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                             {prediction.symbol}
                         </Typography>
                         <Chip
-                            icon={isLong ? <TrendingUpIcon /> : <TrendingDownIcon />}
+                            icon={isNoTrade ? undefined : (isLong ? <TrendingUpIcon /> : <TrendingDownIcon />)}
                             label={prediction.direction.toUpperCase()}
                             size="small"
                             sx={{
@@ -155,7 +156,30 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                     </Box>
                 )}
 
+                {/* Signals section */}
+                {prediction.marketSignals && prediction.marketSignals.length > 0 && (
+                    <Box
+                        sx={{
+                            mb: 1.5,
+                            p: 1.5,
+                            borderRadius: 1,
+                            backgroundColor: 'rgba(255,255,255,0.02)',
+                            border: '1px solid rgba(255,255,255,0.06)',
+                        }}
+                    >
+                        <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                            Signals
+                        </Typography>
+                        {prediction.marketSignals.map((s, i) => (
+                            <Typography key={i} variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                                {'\u2022'} {s}
+                            </Typography>
+                        ))}
+                    </Box>
+                )}
+
                 {/* Section 3: Key Levels */}
+                {!isNoTrade && (
                 <Box display="flex" gap={2} mb={1.5} flexWrap="wrap">
                     <Box>
                         <Typography variant="caption" color="text.secondary">
@@ -202,6 +226,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                         </Box>
                     )}
                 </Box>
+                )}
 
                 {/* Section 4: Why This Status */}
                 {isRejected && (
@@ -217,7 +242,24 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                     </Alert>
                 )}
 
-                {prediction.reviewVerdict && (
+                {/* Why this status */}
+                {prediction.predictionReason && (
+                    <Box
+                        sx={{
+                            mb: 1.5,
+                            p: 1.5,
+                            borderRadius: 1,
+                            backgroundColor: `${status.color}10`,
+                            border: `1px solid ${status.color}20`,
+                        }}
+                    >
+                        <Typography variant="body2" fontStyle="italic" color="text.secondary">
+                            {prediction.predictionReason}
+                        </Typography>
+                    </Box>
+                )}
+
+                {!isNoTrade && prediction.reviewVerdict && (
                     <Box
                         sx={{
                             mb: 1.5,
@@ -276,7 +318,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                 )}
 
                 {/* Section 5: Risk/Review details */}
-                {(prediction.riskRewardRatio || prediction.positionSizePct) && (
+                {!isNoTrade && (prediction.riskRewardRatio || prediction.positionSizePct) && (
                     <Box display="flex" gap={2} mb={1.5}>
                         {prediction.riskRewardRatio != null && (
                             <Box>

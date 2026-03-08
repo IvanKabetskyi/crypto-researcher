@@ -32,12 +32,14 @@ interface PredictionApiResponse {
     volume_profile?: string;
     derivatives_sentiment?: string;
     prediction_status?: string;
+    market_signals?: string[];
+    prediction_reason?: string;
 }
 
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
     id: data.id,
     symbol: data.symbol,
-    direction: data.direction as 'long' | 'short',
+    direction: data.direction as 'long' | 'short' | 'NO_TRADE',
     confidence: data.confidence,
     reasoning: data.reasoning,
     entryPrice: data.entry_price,
@@ -65,6 +67,8 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     volumeProfile: data.volume_profile as Prediction['volumeProfile'],
     derivativesSentiment: data.derivatives_sentiment as Prediction['derivativesSentiment'],
     predictionStatus: data.prediction_status,
+    marketSignals: data.market_signals,
+    predictionReason: data.prediction_reason,
 });
 
 interface HistoryApiResponse {

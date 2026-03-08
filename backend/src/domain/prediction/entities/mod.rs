@@ -35,6 +35,8 @@ pub struct Prediction {
     volume_profile: Option<String>,
     derivatives_sentiment: Option<String>,
     prediction_status: Option<String>,
+    market_signals: Option<Vec<String>>,
+    prediction_reason: Option<String>,
 }
 
 impl Prediction {
@@ -85,6 +87,8 @@ impl Prediction {
             volume_profile: None,
             derivatives_sentiment: None,
             prediction_status: None,
+            market_signals: None,
+            prediction_reason: None,
         }
     }
 
@@ -109,6 +113,8 @@ impl Prediction {
         volume_profile: Option<String>,
         derivatives_sentiment: Option<String>,
         prediction_status: Option<String>,
+        market_signals: Option<Vec<String>>,
+        prediction_reason: Option<String>,
     ) -> Self {
         self.market_bias = market_bias;
         self.setup_type = setup_type;
@@ -129,6 +135,8 @@ impl Prediction {
         self.volume_profile = volume_profile;
         self.derivatives_sentiment = derivatives_sentiment;
         self.prediction_status = prediction_status;
+        self.market_signals = market_signals;
+        self.prediction_reason = prediction_reason;
         self
     }
 
@@ -254,5 +262,13 @@ impl Prediction {
 
     pub fn get_prediction_status(&self) -> Option<&str> {
         self.prediction_status.as_deref()
+    }
+
+    pub fn get_market_signals(&self) -> Option<&[String]> {
+        self.market_signals.as_deref()
+    }
+
+    pub fn get_prediction_reason(&self) -> Option<&str> {
+        self.prediction_reason.as_deref()
     }
 }

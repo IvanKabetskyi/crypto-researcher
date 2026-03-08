@@ -101,16 +101,12 @@ pub async fn run_analysis_use_case(
         .await
         .map_err(|e| format!("AI analysis failed: {}", e))?;
 
-    if raw_predictions.is_empty() {
-        return Err("AI returned 0 predictions".into());
-    }
-
     tracing::info!("AI returned {} predictions", raw_predictions.len());
 
-    // Filter by confidence
+    // Filter by confidence (always pass NO_TRADE through)
     let filtered: Vec<_> = raw_predictions
         .iter()
-        .filter(|p| p.get_confidence() >= min_confidence && p.get_confidence() <= 100.0)
+        .filter(|p| p.get_direction() == "NO_TRADE" || (p.get_confidence() >= min_confidence && p.get_confidence() <= 100.0))
         .collect();
 
     tracing::info!(

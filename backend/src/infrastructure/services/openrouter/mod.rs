@@ -50,7 +50,7 @@ struct MarketAnalysis {
     momentum: Option<String>,
     volume_profile: Option<String>,
     derivatives_sentiment: Option<String>,
-    summary: Option<String>,
+    signals: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -60,11 +60,11 @@ struct KeyLevels {
     resistance: Option<f64>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 struct SignalOutput {
     symbol: String,
-    direction: Option<String>,
+    trade_decision: Option<String>,
     confidence: Option<f64>,
     setup_type: Option<String>,
     entry_price: Option<f64>,
@@ -72,7 +72,7 @@ struct SignalOutput {
     secondary_target: Option<f64>,
     stop_loss: Option<f64>,
     invalidation: Option<f64>,
-    reasoning: Option<String>,
+    reasoning: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -149,11 +149,6 @@ struct ReviewTargets {
 #[derive(Deserialize, Debug)]
 struct AnalysisResponse {
     analyses: Option<Vec<MarketAnalysis>>,
-}
-
-#[derive(Deserialize, Debug)]
-struct SignalResponse {
-    signals: Option<Vec<SignalOutput>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -383,7 +378,8 @@ impl AIService {
             \"momentum\": \"accelerating|steady|decelerating|exhausted\", \
             \"volumeProfile\": \"confirming|diverging|spike\", \
             \"derivativesSentiment\": \"bullish|bearish|neutral|squeeze_risk\", \
-            \"summary\": \"2-3 sentence objective market state\"}}]}}",
+            \"signals\": [\"observation under 80 chars\", ...]}}]}}\n\n\
+            signals must contain 2-5 short strings, each under 80 characters.",
             timeframe = timeframe,
             timeframe_guidance = timeframe_guidance,
         )
@@ -410,7 +406,8 @@ impl AIService {
             TIMEFRAME: {timeframe} | TIME HORIZON: {time_horizon}\n\
             TARGETS: {target_guide}\n\n\
             RULES:\n\
-            - If market bias is neutral or signals are mixed → set direction to \"NO_TRADE\" with low confidence\n\
+            - Return exactly ONE JSON object for the single best setup. If no valid trade, return one object with tradeDecision=NO_TRADE.\n\
+            - If market bias is neutral or signals are mixed → set tradeDecision to \"NO_TRADE\" with low confidence\n\
             - entry_price = current market price from the data\n\
             - For SHORT: target BELOW entry, stop_loss ABOVE entry\n\
             - For LONG: target ABOVE entry, stop_loss BELOW entry\n\
@@ -428,11 +425,11 @@ impl AIService {
             - All strings must be closed, all braces balanced\n\
             - Keep text fields under 100 characters\n\
             - Use arrays of short strings, not long paragraphs\n\n\
-            {{\"signals\": [{{\"symbol\": \"BTCUSDT\", \"direction\": \"long|short|NO_TRADE\", \
+            {{\"symbol\": \"BTCUSDT\", \"tradeDecision\": \"LONG|SHORT|NO_TRADE\", \
             \"confidence\": 0-100, \"setupType\": \"BREAKOUT|MEAN_REVERSION|SQUEEZE|CONTINUATION|NO_SETUP\", \
             \"entryPrice\": number, \"targetPrice\": number, \"secondaryTarget\": number, \
             \"stopLoss\": number, \"invalidation\": number, \
-            \"reasoning\": \"key factors driving this signal\"}}]}}",
+            \"reasoning\": [\"factor 1\", \"factor 2\", ...]}}",
             market_context_json = market_context_json,
             timeframe = timeframe,
             time_horizon = time_horizon,
@@ -660,24 +657,40 @@ impl AIService {
                 match serde_json::from_str::<AnalysisResponse>(&retry_json) {
                     Ok(r) => r.analyses.unwrap_or_default(),
                     Err(e2) => {
-                        let snippet = &retry_raw[..retry_raw.len().min(300)];
-                        tracing::error!("Step 1 retry parse failed: {}. Raw: {}", e2, snippet);
-                        return Err(format!(
-                            "Market Analyzer returned unparseable response ({}). AI said: {}",
-                            e2, snippet
-                        ).into());
+                        tracing::error!("Step 1 retry parse failed: {}. Returning fallback.", e2);
+                        let fallback_symbol = snapshot.first_symbol().unwrap_or_else(|| "UNKNOWN".into());
+                        let fallback = Prediction::new(
+                            &fallback_symbol, "NO_TRADE", 0.0,
+                            "Market analysis unavailable", 0.0, 0.0, 0.0,
+                            None, None, None, None, Some(timeframe.to_string()),
+                        ).with_pipeline(
+                            None, None, None, None, None, None, None, None,
+                            None, None, None, None, None, None, None, None, None, None,
+                            Some("REJECTED".into()),
+                            None,
+                            Some("Market analysis could not be parsed".into()),
+                        );
+                        return Ok(vec![fallback]);
                     }
                 }
             }
         };
 
         if analyses.is_empty() {
-            let snippet = &step1_raw[..step1_raw.len().min(300)];
-            tracing::error!("Step 1 returned empty analyses. Raw: {}", snippet);
-            return Err(format!(
-                "Market Analyzer returned 0 analyses. AI said: {}",
-                snippet
-            ).into());
+            tracing::error!("Step 1 returned empty analyses. Returning fallback.");
+            let fallback_symbol = snapshot.first_symbol().unwrap_or_else(|| "UNKNOWN".into());
+            let fallback = Prediction::new(
+                &fallback_symbol, "NO_TRADE", 0.0,
+                "Market analysis unavailable", 0.0, 0.0, 0.0,
+                None, None, None, None, Some(timeframe.to_string()),
+            ).with_pipeline(
+                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None, None, None,
+                Some("REJECTED".into()),
+                None,
+                Some("Market analyzer returned no analyses".into()),
+            );
+            return Ok(vec![fallback]);
         }
 
         // 1-2s delay between AI calls
@@ -687,51 +700,77 @@ impl AIService {
         let step2_system = Self::build_signal_generator_prompt(&step1_json, timeframe);
         tracing::info!("Pipeline Step 2: Signal Generator ({})", self.model);
         let step2_raw = self
-            .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\"signals\":["))
+            .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\""))
             .await?;
-        let step2_json = Self::parse_json_response(&step2_raw, "signals");
-        tracing::info!("Step 2 complete: {} chars", step2_json.len());
 
-        let signals: Vec<SignalOutput> = match serde_json::from_str::<SignalResponse>(&step2_json) {
-            Ok(r) => r.signals.unwrap_or_default(),
+        // Parse as single flat object
+        let step2_prefixed = format!("{{\"{}", step2_raw.trim_start_matches('{'));
+        let step2_cleaned = Self::extract_first_json(&step2_prefixed);
+
+        let signals: Vec<SignalOutput> = match serde_json::from_str::<SignalOutput>(step2_cleaned) {
+            Ok(signal) => vec![signal],
             Err(e) => {
                 tracing::warn!("Step 2 parse failed ({}), retrying...", e);
                 let retry_raw = self
-                    .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\"signals\":["))
+                    .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\""))
                     .await?;
-                let retry_json = Self::parse_json_response(&retry_raw, "signals");
-                match serde_json::from_str::<SignalResponse>(&retry_json) {
-                    Ok(r) => r.signals.unwrap_or_default(),
+                let retry_prefixed = format!("{{\"{}", retry_raw.trim_start_matches('{'));
+                let retry_cleaned = Self::extract_first_json(&retry_prefixed);
+                match serde_json::from_str::<SignalOutput>(retry_cleaned) {
+                    Ok(signal) => vec![signal],
                     Err(e2) => {
-                        let snippet = &retry_raw[..retry_raw.len().min(300)];
-                        tracing::error!("Step 2 retry parse failed: {}. Raw: {}", e2, snippet);
-                        return Err(format!(
-                            "Signal Generator returned unparseable response ({}). AI said: {}",
-                            e2, snippet
-                        ).into());
+                        tracing::error!("Step 2 retry parse failed: {}. Returning fallback.", e2);
+                        let fallback_symbol = snapshot.first_symbol().unwrap_or_else(|| "UNKNOWN".into());
+                        let fallback = Prediction::new(
+                            &fallback_symbol, "NO_TRADE", 0.0,
+                            "Signal generation unavailable", 0.0, 0.0, 0.0,
+                            None, None, None, None, Some(timeframe.to_string()),
+                        ).with_pipeline(
+                            None, None, None, None, None, None, None, None,
+                            None, None, None, None, None, None, None, None, None, None,
+                            Some("REJECTED".into()),
+                            None,
+                            Some("Signal generator could not be parsed".into()),
+                        );
+                        return Ok(vec![fallback]);
                     }
                 }
             }
         };
 
-        if signals.is_empty() {
-            let snippet = &step2_raw[..step2_raw.len().min(300)];
-            tracing::error!("Step 2 returned empty signals. Raw: {}", snippet);
-            return Err(format!(
-                "Signal Generator returned 0 signals. AI said: {}",
-                snippet
-            ).into());
-        }
+        // Re-serialize signals as {"signals":[...]} for downstream stages 3-5
+        let step2_json = serde_json::to_string(&serde_json::json!({"signals": signals}))
+            .unwrap_or_else(|_| "{}".into());
+        tracing::info!("Step 2 complete: {} chars", step2_json.len());
 
-        // Filter out NO_TRADE before continuing (save tokens for later stages)
-        let active_signals: Vec<&SignalOutput> = signals
-            .iter()
-            .filter(|s| s.direction.as_deref() != Some("NO_TRADE"))
-            .collect();
+        // Check for NO_TRADE — skip stages 3-5, return REJECTED prediction
+        let signal = &signals[0];
+        if signal.trade_decision.as_deref() == Some("NO_TRADE") {
+            tracing::info!("Signal is NO_TRADE — returning REJECTED prediction");
+            let analysis = analyses.iter().find(|a| a.symbol == signal.symbol).or_else(|| analyses.first());
+            let market_bias = analysis.and_then(|a| a.market_bias.clone());
+            let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
+            let momentum = analysis.and_then(|a| a.momentum.clone());
+            let volume_profile = analysis.and_then(|a| a.volume_profile.clone());
+            let derivatives_sentiment = analysis.and_then(|a| a.derivatives_sentiment.clone());
+            let market_signals = analysis.and_then(|a| a.signals.clone());
+            let reasoning = signal.reasoning.as_ref()
+                .map(|v| v.join("\n"))
+                .unwrap_or_else(|| "No valid trade setup found".into());
 
-        if active_signals.is_empty() {
-            tracing::info!("All signals are NO_TRADE — no predictions to generate");
-            return Ok(vec![]);
+            let prediction = Prediction::new(
+                &signal.symbol, "NO_TRADE", signal.confidence.unwrap_or(0.0),
+                &reasoning, 0.0, 0.0, 0.0,
+                None, None, None, None, Some(timeframe.to_string()),
+            ).with_pipeline(
+                market_bias, signal.setup_type.clone(), None, None, None,
+                None, None, None, None, None, None, None, None, None,
+                trend_strength, momentum, volume_profile, derivatives_sentiment,
+                Some("REJECTED".into()),
+                market_signals,
+                Some("No valid trade setup identified".into()),
+            );
+            return Ok(vec![prediction]);
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -818,7 +857,7 @@ impl AIService {
             .iter()
             .filter_map(|signal| {
                 let symbol = &signal.symbol;
-                let direction = signal.direction.as_deref()?;
+                let direction = signal.trade_decision.as_deref()?;
 
                 // Skip NO_TRADE
                 if direction == "NO_TRADE" {
@@ -832,7 +871,9 @@ impl AIService {
                 let secondary_target = signal.secondary_target;
                 let invalidation = signal.invalidation;
                 let setup_type = signal.setup_type.clone();
-                let reasoning = signal.reasoning.as_deref().unwrap_or("No reasoning");
+                let reasoning = signal.reasoning.as_ref()
+                    .map(|v| v.join("\n"))
+                    .unwrap_or_else(|| "No reasoning".into());
 
                 // Get market analysis
                 let analysis = analyses.iter().find(|a| a.symbol == *symbol);
@@ -841,6 +882,7 @@ impl AIService {
                 let momentum = analysis.and_then(|a| a.momentum.clone());
                 let volume_profile = analysis.and_then(|a| a.volume_profile.clone());
                 let derivatives_sentiment = analysis.and_then(|a| a.derivatives_sentiment.clone());
+                let market_signals = analysis.and_then(|a| a.signals.clone());
 
                 // Get risk assessment
                 let risk = risks.iter().find(|r| r.symbol == *symbol);
@@ -866,7 +908,6 @@ impl AIService {
                     }
                     if let Some(adj_entry) = strat.adjusted_entry {
                         if adj_entry > 0.0 {
-                            // Use adjusted entry only for logging; entry_price stays as market price
                             tracing::info!("{}: Optimizer adjusted entry {:.2} → {:.2}", symbol, entry_price, adj_entry);
                         }
                     }
@@ -886,7 +927,6 @@ impl AIService {
                 }
 
                 // Get review (Haiku) verdict
-                // Use index-based matching for reviews (reviews are ordered same as signals)
                 let signal_idx = signals.iter().position(|s| s.symbol == *symbol)?;
                 let review = reviews.get(signal_idx);
 
@@ -897,17 +937,15 @@ impl AIService {
                         let final_decision = verdict.and_then(|v| v.final_decision.as_deref());
                         let rev_confidence = verdict.and_then(|v| v.confidence).unwrap_or(confidence);
 
-                        // Check finalDecision first (new behavior)
                         if let Some(decision) = final_decision {
                             if decision == "NO_TRADE" {
                                 tracing::info!("{}: NO_TRADE by Review AI finalDecision — skipping", symbol);
                                 return None;
                             }
 
-                            // Check if review direction conflicts with signal direction
                             let decision_dir = match decision {
-                                "LONG" => "long",
-                                "SHORT" => "short",
+                                "LONG" => "LONG",
+                                "SHORT" => "SHORT",
                                 _ => "",
                             };
                             if !decision_dir.is_empty() && decision_dir != direction {
@@ -918,7 +956,6 @@ impl AIService {
                                 return None;
                             }
 
-                            // finalDecision matches signal direction — apply verdict adjustments
                             match final_verdict {
                                 Some("REJECT") => {
                                     tracing::info!("{}: REJECTED by Review AI — skipping", symbol);
@@ -952,7 +989,6 @@ impl AIService {
                                 _ => (confidence, None, None),
                             }
                         } else {
-                            // No finalDecision — fall back to old behavior
                             match final_verdict {
                                 Some("REJECT") => {
                                     tracing::info!("{}: REJECTED by Review AI — skipping", symbol);
@@ -991,10 +1027,10 @@ impl AIService {
                 };
 
                 // Validate target/stop direction
-                if direction == "short" && target_price > entry_price {
+                if direction == "SHORT" && target_price > entry_price {
                     tracing::warn!("{}: Correcting SHORT target/stop", symbol);
                     std::mem::swap(&mut target_price, &mut stop_loss);
-                } else if direction == "long" && target_price < entry_price {
+                } else if direction == "LONG" && target_price < entry_price {
                     tracing::warn!("{}: Correcting LONG target/stop", symbol);
                     std::mem::swap(&mut target_price, &mut stop_loss);
                 }
@@ -1015,14 +1051,14 @@ impl AIService {
                         "{}: Clamping target from {:.4}% to {:.4}% for {}",
                         symbol, target_dist * 100.0, max_target_pct * 100.0, timeframe
                     );
-                    target_price = if direction == "long" {
+                    target_price = if direction == "LONG" {
                         entry_price * (1.0 + max_target_pct)
                     } else {
                         entry_price * (1.0 - max_target_pct)
                     };
                     let stop_dist = ((stop_loss - entry_price) / entry_price).abs();
                     if stop_dist > max_target_pct {
-                        stop_loss = if direction == "long" {
+                        stop_loss = if direction == "LONG" {
                             entry_price * (1.0 - max_target_pct * 0.5)
                         } else {
                             entry_price * (1.0 + max_target_pct * 0.5)
@@ -1078,10 +1114,13 @@ impl AIService {
                 );
 
                 let review_issues_opt = if review_issues.is_empty() { None } else { Some(review_issues) };
+                // Derive prediction_reason before moving review_notes_vec
+                let first_review_note = review_notes_vec.first().cloned();
+
                 let review_notes_opt = if review_notes_vec.is_empty() { None } else { Some(review_notes_vec) };
 
                 // Derive unified prediction status
-                let prediction_status = match (review_verdict_str.as_deref(), execution_action.as_deref()) {
+                let prediction_status: Option<String> = match (review_verdict_str.as_deref(), execution_action.as_deref()) {
                     (Some("REJECT"), _) => Some("REJECTED".into()),
                     (Some("DOWNGRADE"), _) => Some("DOWNGRADED".into()),
                     (Some("ACCEPT_WITH_CAUTION"), _) => Some("ACCEPT_WITH_CAUTION".into()),
@@ -1089,6 +1128,20 @@ impl AIService {
                     (_, Some("REDUCED_SIZE")) => Some("REDUCED_SIZE".into()),
                     (Some("ACCEPT"), _) => Some("APPROVED".into()),
                     _ => Some("APPROVED".into()),
+                };
+
+                // Derive prediction_reason from status
+                let prediction_reason: Option<String> = match prediction_status.as_deref() {
+                    Some("REJECTED") => Some(
+                        first_review_note
+                            .unwrap_or_else(|| "Trade rejected by review".into())
+                    ),
+                    Some("DOWNGRADED") => Some("Confidence reduced due to identified risks".into()),
+                    Some("WAIT_CONFIRMATION") => Some("Setup needs further confirmation".into()),
+                    Some("REDUCED_SIZE") => Some("Position size reduced due to elevated risk".into()),
+                    Some("ACCEPT_WITH_CAUTION") => Some("Valid setup with moderate risk factors".into()),
+                    Some("APPROVED") => Some("Setup approved with aligned indicators".into()),
+                    _ => None,
                 };
 
                 let prediction = Prediction::new(
@@ -1125,6 +1178,8 @@ impl AIService {
                     volume_profile,
                     derivatives_sentiment,
                     prediction_status,
+                    market_signals,
+                    prediction_reason,
                 );
 
                 tracing::info!(

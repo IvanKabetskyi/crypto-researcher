@@ -40,6 +40,8 @@ pub struct PredictionSchema {
     pub volume_profile: Option<String>,
     pub derivatives_sentiment: Option<String>,
     pub prediction_status: Option<String>,
+    pub market_signals: Option<Vec<String>>,
+    pub prediction_reason: Option<String>,
 }
 
 impl PredictionSchema {
@@ -76,6 +78,8 @@ impl PredictionSchema {
             volume_profile: p.get_volume_profile().map(String::from),
             derivatives_sentiment: p.get_derivatives_sentiment().map(String::from),
             prediction_status: p.get_prediction_status().map(String::from),
+            market_signals: p.get_market_signals().map(|v| v.to_vec()),
+            prediction_reason: p.get_prediction_reason().map(String::from),
         }
     }
 
@@ -114,6 +118,8 @@ impl PredictionSchema {
             self.volume_profile,
             self.derivatives_sentiment,
             self.prediction_status,
+            self.market_signals,
+            self.prediction_reason,
         )
     }
 }
