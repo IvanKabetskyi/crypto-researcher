@@ -1,7 +1,7 @@
 export interface Prediction {
     id: string;
     symbol: string;
-    direction: 'long' | 'short' | 'NO_TRADE';
+    direction: 'long' | 'short' | 'LONG' | 'SHORT' | 'NO_TRADE';
     confidence: number;
     reasoning: string;
     entryPrice: number;

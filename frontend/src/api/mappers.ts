@@ -39,7 +39,7 @@ interface PredictionApiResponse {
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
     id: data.id,
     symbol: data.symbol,
-    direction: data.direction as 'long' | 'short' | 'NO_TRADE',
+    direction: data.direction as Prediction['direction'],
     confidence: data.confidence,
     reasoning: data.reasoning,
     entryPrice: data.entry_price,
