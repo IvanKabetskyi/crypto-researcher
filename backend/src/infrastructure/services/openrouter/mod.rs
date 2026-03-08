@@ -293,6 +293,34 @@ impl AIService {
         }
     }
 
+    /// Extract the first complete JSON value from a string by brace/bracket matching.
+    /// Returns the slice up to and including the closing delimiter, ignoring trailing text.
+    fn extract_first_json(s: &str) -> &str {
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut escape = false;
+
+        for (i, c) in s.char_indices() {
+            if escape {
+                escape = false;
+                continue;
+            }
+            match c {
+                '\\' if in_string => escape = true,
+                '"' => in_string = !in_string,
+                '{' | '[' if !in_string => depth += 1,
+                '}' | ']' if !in_string => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &s[..=i];
+                    }
+                }
+                _ => {}
+            }
+        }
+        s
+    }
+
     fn parse_json_response(raw: &str, prefill_key: &str) -> String {
         let cleaned = raw
             .trim()
@@ -303,11 +331,16 @@ impl AIService {
 
         // The assistant prefill starts with {"key":[ so the response continues from there
         let opening = format!("{{\"{}\":", prefill_key);
-        if cleaned.starts_with('{') && cleaned.contains(prefill_key) {
+        let reconstructed = if cleaned.starts_with('{') && cleaned.contains(prefill_key) {
             cleaned.to_string()
         } else {
-            format!("{}[{}]", opening, cleaned.trim_start_matches('[').trim_end_matches(']'))
-        }
+            // AI continues after prefill e.g. {"analyses":[  — response is the array contents + closing
+            let inner = cleaned.trim_start_matches('[').trim_end_matches(']');
+            format!("{}[{}]", opening, inner)
+        };
+
+        // Truncate at the end of the first complete JSON object to strip trailing text
+        Self::extract_first_json(&reconstructed).to_string()
     }
 
     // ── Step 1: Market Analyzer ─────────────────────────────────────────────
