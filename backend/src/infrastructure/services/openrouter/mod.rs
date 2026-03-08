@@ -526,15 +526,25 @@ impl AIService {
         let step1_json = Self::parse_json_response(&step1_raw, "analyses");
         tracing::info!("Step 1 complete: {} chars", step1_json.len());
 
-        let analyses: Vec<MarketAnalysis> = serde_json::from_str::<AnalysisResponse>(&step1_json)
-            .map(|r| r.analyses.unwrap_or_default())
-            .unwrap_or_else(|e| {
-                tracing::warn!("Step 1 parse warning: {}", e);
-                vec![]
-            });
+        let analyses: Vec<MarketAnalysis> = match serde_json::from_str::<AnalysisResponse>(&step1_json) {
+            Ok(r) => r.analyses.unwrap_or_default(),
+            Err(e) => {
+                let snippet = &step1_raw[..step1_raw.len().min(300)];
+                tracing::error!("Step 1 parse failed: {}. Raw: {}", e, snippet);
+                return Err(format!(
+                    "Market Analyzer returned unparseable response ({}). AI said: {}",
+                    e, snippet
+                ).into());
+            }
+        };
 
         if analyses.is_empty() {
-            return Err("Market Analyzer returned 0 analyses".into());
+            let snippet = &step1_raw[..step1_raw.len().min(300)];
+            tracing::error!("Step 1 returned empty analyses. Raw: {}", snippet);
+            return Err(format!(
+                "Market Analyzer returned 0 analyses. AI said: {}",
+                snippet
+            ).into());
         }
 
         // 1-2s delay between AI calls
@@ -549,15 +559,25 @@ impl AIService {
         let step2_json = Self::parse_json_response(&step2_raw, "signals");
         tracing::info!("Step 2 complete: {} chars", step2_json.len());
 
-        let signals: Vec<SignalOutput> = serde_json::from_str::<SignalResponse>(&step2_json)
-            .map(|r| r.signals.unwrap_or_default())
-            .unwrap_or_else(|e| {
-                tracing::warn!("Step 2 parse warning: {}", e);
-                vec![]
-            });
+        let signals: Vec<SignalOutput> = match serde_json::from_str::<SignalResponse>(&step2_json) {
+            Ok(r) => r.signals.unwrap_or_default(),
+            Err(e) => {
+                let snippet = &step2_raw[..step2_raw.len().min(300)];
+                tracing::error!("Step 2 parse failed: {}. Raw: {}", e, snippet);
+                return Err(format!(
+                    "Signal Generator returned unparseable response ({}). AI said: {}",
+                    e, snippet
+                ).into());
+            }
+        };
 
         if signals.is_empty() {
-            return Err("Signal Generator returned 0 signals".into());
+            let snippet = &step2_raw[..step2_raw.len().min(300)];
+            tracing::error!("Step 2 returned empty signals. Raw: {}", snippet);
+            return Err(format!(
+                "Signal Generator returned 0 signals. AI said: {}",
+                snippet
+            ).into());
         }
 
         // Filter out NO_TRADE before continuing (save tokens for later stages)
