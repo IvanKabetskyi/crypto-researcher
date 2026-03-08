@@ -73,6 +73,30 @@ struct SignalOutput {
     stop_loss: Option<f64>,
     reasoning: Option<Vec<String>>,
     issues: Option<Vec<String>>,
+    confluence_score: Option<f64>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct SetupFeatures {
+    symbol: String,
+    intended_direction: String,
+    entry_price: f64,
+    target_price: f64,
+    stop_loss: f64,
+    risk_reward: f64,
+    distance_to_resistance_pct: f64,
+    distance_to_support_pct: f64,
+    volatility_spike: bool,
+    leverage_risk: bool,
+    liquidation_risk: bool,
+    confirmations_count: u32,
+    confirmations: Vec<String>,
+    market_bias: String,
+    trend_strength: String,
+    momentum: String,
+    volume_profile: String,
+    rsi: f64,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -385,111 +409,227 @@ impl AIService {
         )
     }
 
-    // ── Step 2: Signal Generator ────────────────────────────────────────────
+    // ── Step 2: Setup Classifier ─────────────────────────────────────────────
 
-    fn build_signal_generator_prompt(market_context_json: &str, timeframe: &str) -> String {
-        let (target_guide, time_horizon) = match timeframe {
-            "5min"  => ("target 0.03-0.10%, stop 0.03-0.07%", "5-15 MINUTES"),
-            "30min" => ("target 0.10-0.30%, stop 0.08-0.20%", "30-90 MINUTES"),
-            "1h"    => ("target 0.25-0.70%, stop 0.15-0.35%", "1-3 HOURS"),
-            "6h"    => ("target 0.5-1.5%, stop 0.3-0.8%", "6-18 HOURS"),
-            "12h"   => ("target 1.0-2.5%, stop 0.5-1.2%", "12-36 HOURS"),
-            "24h"   => ("target 1.5-4.0%, stop 0.8-2.0%", "1-3 DAYS"),
-            _       => ("target 0.3-0.8%, stop 0.2-0.4%", "1-3 candles"),
+    fn compute_setup_features(
+        symbol: &str,
+        analysis: &MarketAnalysis,
+        snapshot: &MarketSnapshot,
+        timeframe: &str,
+    ) -> Option<SetupFeatures> {
+        let ticker = snapshot.get_ticker(symbol)?;
+        let klines = snapshot.get_klines(symbol)?;
+        if klines.len() < 5 {
+            return None;
+        }
+
+        let current_price = ticker.get_last_price();
+        let market_bias = analysis.market_bias.as_deref().unwrap_or("neutral");
+
+        // Determine intended direction from market bias
+        let intended_direction = match market_bias {
+            "bullish" => "LONG",
+            "bearish" => "SHORT",
+            _ => return None, // neutral → no setup to classify
+        };
+
+        // Compute support/resistance from klines
+        let highs: Vec<f64> = klines.iter().map(|k| k.get_high()).collect();
+        let lows: Vec<f64> = klines.iter().map(|k| k.get_low()).collect();
+        let closes: Vec<f64> = klines.iter().map(|k| k.get_close()).collect();
+        let volumes: Vec<f64> = klines.iter().map(|k| k.get_volume()).collect();
+        let n = closes.len();
+
+        let resistance = highs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let support = lows.iter().cloned().fold(f64::INFINITY, f64::min);
+
+        // Compute target/stop based on direction and timeframe
+        let target_pct = match timeframe {
+            "5min"  => 0.0007,
+            "30min" => 0.002,
+            "1h"    => 0.005,
+            "6h"    => 0.01,
+            "12h"   => 0.018,
+            "24h"   => 0.03,
+            _       => 0.005,
+        };
+        let stop_pct = target_pct * 0.5;
+
+        let (entry_price, target_price, stop_loss) = if intended_direction == "LONG" {
+            (
+                current_price,
+                (current_price * (1.0 + target_pct)).min(resistance),
+                current_price * (1.0 - stop_pct),
+            )
+        } else {
+            (
+                current_price,
+                (current_price * (1.0 - target_pct)).max(support),
+                current_price * (1.0 + stop_pct),
+            )
+        };
+
+        let reward = (target_price - entry_price).abs();
+        let risk = (stop_loss - entry_price).abs();
+        let risk_reward = if risk > 0.0 { reward / risk } else { 0.0 };
+
+        let dist_to_resistance = if resistance > 0.0 {
+            ((resistance - current_price) / current_price) * 100.0
+        } else {
+            0.0
+        };
+        let dist_to_support = if support > 0.0 {
+            ((current_price - support) / current_price) * 100.0
+        } else {
+            0.0
+        };
+
+        // Volatility spike: last candle volume vs avg
+        let vol_spike = if n >= 2 {
+            let last_vol = volumes[n - 1];
+            let avg_vol = if n >= 6 {
+                volumes[n - 6..n - 1].iter().sum::<f64>() / 5.0
+            } else {
+                volumes[..n - 1].iter().sum::<f64>() / (n - 1) as f64
+            };
+            if avg_vol > 0.0 { last_vol / avg_vol > 2.0 } else { false }
+        } else {
+            false
+        };
+
+        // Leverage/liquidation risk from derivatives
+        let derivs = snapshot.get_derivatives(symbol);
+        let funding_rate = derivs.map(|d| d.get_funding_rate()).unwrap_or(0.0);
+        let long_ratio = derivs.map(|d| d.get_long_ratio()).unwrap_or(0.5);
+        let short_ratio = derivs.map(|d| d.get_short_ratio()).unwrap_or(0.5);
+
+        let leverage_risk = funding_rate.abs() > 0.005;
+        let liquidation_risk = (intended_direction == "LONG" && long_ratio > 0.65 && funding_rate > 0.003)
+            || (intended_direction == "SHORT" && short_ratio > 0.65 && funding_rate < -0.003);
+
+        // RSI
+        let rsi_period = match timeframe {
+            "5min" => 9,
+            "30min" => 10,
+            _ => 14,
+        };
+        let rsi = compute_rsi_for_features(&closes, rsi_period);
+
+        // Count confirmations
+        let mut confirmations = Vec::new();
+        let trend = analysis.trend_strength.as_deref().unwrap_or("weak");
+        let momentum_val = analysis.momentum.as_deref().unwrap_or("neutral");
+        let volume_val = analysis.volume_profile.as_deref().unwrap_or("weak");
+        let derivs_val = analysis.derivatives_sentiment.as_deref().unwrap_or("neutral");
+
+        if trend == "strong" || trend == "moderate" {
+            confirmations.push("trend_aligned".to_string());
+        }
+        if (intended_direction == "LONG" && momentum_val == "accelerating")
+            || (intended_direction == "SHORT" && momentum_val == "decelerating")
+        {
+            confirmations.push("momentum_confirming".to_string());
+        }
+        if volume_val == "confirming" {
+            confirmations.push("volume_confirming".to_string());
+        }
+        if (intended_direction == "LONG" && derivs_val == "bullish")
+            || (intended_direction == "SHORT" && derivs_val == "bearish")
+        {
+            confirmations.push("derivatives_aligned".to_string());
+        }
+        if (intended_direction == "LONG" && rsi < 35.0)
+            || (intended_direction == "SHORT" && rsi > 65.0)
+        {
+            confirmations.push("rsi_extreme".to_string());
+        }
+        if (intended_direction == "LONG" && dist_to_support < 1.0)
+            || (intended_direction == "SHORT" && dist_to_resistance < 1.0)
+        {
+            confirmations.push("near_key_level".to_string());
+        }
+
+        Some(SetupFeatures {
+            symbol: symbol.to_string(),
+            intended_direction: intended_direction.to_string(),
+            entry_price,
+            target_price,
+            stop_loss,
+            risk_reward,
+            distance_to_resistance_pct: dist_to_resistance,
+            distance_to_support_pct: dist_to_support,
+            volatility_spike: vol_spike,
+            leverage_risk,
+            liquidation_risk,
+            confirmations_count: confirmations.len() as u32,
+            confirmations,
+            market_bias: market_bias.to_string(),
+            trend_strength: trend.to_string(),
+            momentum: momentum_val.to_string(),
+            volume_profile: volume_val.to_string(),
+            rsi,
+        })
+    }
+
+    fn build_setup_classifier_prompt(features_json: &str, timeframe: &str) -> String {
+        let time_horizon = match timeframe {
+            "5min"  => "5-15 MINUTES",
+            "30min" => "30-90 MINUTES",
+            "1h"    => "1-3 HOURS",
+            "6h"    => "6-18 HOURS",
+            "12h"   => "12-36 HOURS",
+            "24h"   => "1-3 DAYS",
+            _       => "1-3 candles",
         };
 
         format!(
-            "You are a professional trading analysis AI inside a crypto analytics platform.\n\n\
-            Your task is NOT to predict the market.\n\
-            Your task is to determine whether a high-quality trade setup exists.\n\
-            If a strong setup does not exist, return NO_TRADE.\n\
-            Capital preservation is more important than trading frequency.\n\
-            The system will automatically parse your response as JSON.\n\
-            Therefore you must strictly follow the rules below.\n\n\
-            === MARKET ANALYSIS (from Stage 1) ===\n{market_context_json}\n\n\
-            TIMEFRAME: {timeframe} | TIME HORIZON: {time_horizon}\n\
-            TARGETS: {target_guide}\n\n\
+            "You are Setup Classifier AI.\n\
+            You receive PRE-COMPUTED deterministic features for a potential trade setup.\n\
+            Your job: classify the setup quality. You do NOT analyze raw market data.\n\n\
+            === COMPUTED FEATURES ===\n{features_json}\n\n\
+            TIMEFRAME: {timeframe} | HORIZON: {time_horizon}\n\n\
             ---\n\
-            CORE PRINCIPLE\n\
-            Do not attempt to forecast price.\n\
-            Instead detect trade setups with statistical edge and favorable risk/reward.\n\
-            Most opportunities should result in NO_TRADE.\n\n\
+            HARD REJECTION RULES (mandatory, override everything):\n\
+            1. riskReward < 1.5 → NO_TRADE, status REJECTED\n\
+            2. confirmationsCount < 3 → NO_TRADE, status REJECTED\n\
+            3. volatilitySpike == true → NO_TRADE, status REJECTED\n\
+            4. leverageRisk == true AND liquidationRisk == true → NO_TRADE, status REJECTED\n\
+            5. LONG and distanceToResistancePct < 0.3 → NO_TRADE, status REJECTED\n\
+            6. SHORT and distanceToSupportPct < 0.3 → NO_TRADE, status REJECTED\n\n\
+            If ANY hard rule triggers → immediately return NO_TRADE with the rule as the reason.\n\n\
             ---\n\
-            ANALYSIS FRAMEWORK\n\
-            Evaluate the market using the following factors:\n\
-            - trend alignment\n\
-            - momentum strength\n\
-            - volume confirmation\n\
-            - liquidity sweep or stop hunt\n\
-            - support/resistance interaction\n\
-            - breakout or continuation structure\n\
-            - mean reversion conditions\n\
-            - derivatives positioning\n\
-            - volatility stability\n\n\
-            A valid trade should have at least three confirming factors.\n\
-            If fewer than three confirmations exist → NO_TRADE.\n\n\
+            CLASSIFICATION (only if no hard rule triggered):\n\n\
+            APPROVED (confidence 75-95):\n\
+            - riskReward >= 2.0\n\
+            - confirmationsCount >= 4\n\
+            - no leverageRisk, no liquidationRisk\n\n\
+            REDUCED_SIZE (confidence 55-74):\n\
+            - riskReward >= 1.5 but < 2.0\n\
+            - OR confirmationsCount == 3\n\
+            - OR leverageRisk == true (without liquidationRisk)\n\n\
+            WAIT_CONFIRMATION (confidence 40-54):\n\
+            - Setup direction is valid but timing uncertain\n\
+            - Momentum is neutral or conflicting\n\n\
             ---\n\
-            RISK / REWARD RULE\n\
-            Only approve trades when: reward / risk >= 1.5\n\
-            Prefer setups with risk/reward >= 2.\n\
-            If the ratio is below 1.5 → NO_TRADE.\n\n\
+            CONFLUENCE SCORE:\n\
+            confluenceScore = confirmationsCount / 6.0 (capped at 1.0)\n\
+            This is a deterministic value. Compute it exactly.\n\n\
             ---\n\
-            DISTANCE RULE\n\
-            Avoid entering trades directly into strong levels.\n\
-            Reject LONG trades if: distance to resistance < 0.3%\n\
-            Reject SHORT trades if: distance to support < 0.3%\n\n\
-            ---\n\
-            VOLATILITY RULE\n\
-            Reject trades when volatility is unstable.\n\
-            Examples: sudden volume spikes, liquidation cascades, abnormal spreads, extremely large candles.\n\
-            These conditions reduce predictability.\n\n\
-            ---\n\
-            CONFLICT RULE\n\
-            If major indicators conflict, reject the trade.\n\
-            Example: bullish trend + bearish order flow + neutral momentum → WAIT_CONFIRMATION or NO_TRADE.\n\n\
-            ---\n\
-            POSITION SIZE LOGIC\n\
-            APPROVED → normal position size\n\
-            REDUCED_SIZE → smaller position due to risk factors\n\
-            WAIT_CONFIRMATION → direction possible but entry not ready\n\
-            REJECTED → do not trade\n\n\
-            ---\n\
-            CONFIDENCE RULE\n\
-            Confidence represents setup quality. Range: 0-100\n\
-            80-100: strong setup\n\
-            60-79: moderate setup\n\
-            40-59: weak setup\n\
-            below 40: reject trade\n\n\
-            ---\n\
-            OUTPUT FORMAT\n\
-            Return exactly one valid JSON object.\n\
-            Rules:\n\
-            - JSON only\n\
-            - no markdown, no code fences, no commentary outside JSON\n\
-            - do not return multiple objects or arrays at the top level\n\
-            - all strings must be closed, all braces balanced\n\
-            - reasoning must be an array of short strings\n\
-            - issues must be an array of short strings\n\n\
-            ---\n\
-            NO_TRADE RULE\n\
-            If a valid setup does not exist:\n\
-            decision = NO_TRADE, status = REJECTED\n\
-            Provide reasoning explaining why the trade was rejected.\n\n\
-            ---\n\
-            FINAL RULE\n\
-            If you are uncertain, return NO_TRADE.\n\
-            The system prefers missing a trade over taking a bad trade.\n\n\
+            OUTPUT FORMAT:\n\
+            Return exactly one valid JSON object. No markdown, no code fences.\n\
+            All strings closed, all braces balanced.\n\
+            reasoning and issues must be arrays of short strings.\n\n\
             OUTPUT SCHEMA:\n\
-            {{\"symbol\":\"BTCUSDT\",\"decision\":\"LONG|SHORT|NO_TRADE\",\
+            {{\"symbol\":\"...\",\"decision\":\"LONG|SHORT|NO_TRADE\",\
             \"status\":\"APPROVED|REDUCED_SIZE|WAIT_CONFIRMATION|REJECTED\",\
-            \"confidence\":0-100,\"riskReward\":number,\
-            \"entryPrice\":number,\"targetPrice\":number,\"stopLoss\":number,\
-            \"reasoning\":[\"short explanation\",...],\
+            \"confidence\":0-100,\"riskReward\":{rr},\
+            \"confluenceScore\":0.0-1.0,\
+            \"reasoning\":[\"factor 1\",\"factor 2\",...],\
             \"issues\":[\"risk factor\",...]}}",
-            market_context_json = market_context_json,
+            features_json = features_json,
             timeframe = timeframe,
             time_horizon = time_horizon,
-            target_guide = target_guide,
+            rr = "number",
         )
     }
 
@@ -725,6 +865,7 @@ impl AIService {
                             Some("REJECTED".into()),
                             None,
                             Some("Market analysis could not be parsed".into()),
+                            None, None,
                         );
                         return Ok(vec![fallback]);
                     }
@@ -745,6 +886,7 @@ impl AIService {
                 Some("REJECTED".into()),
                 None,
                 Some("Market analyzer returned no analyses".into()),
+                None, None,
             );
             return Ok(vec![fallback]);
         }
@@ -752,9 +894,53 @@ impl AIService {
         // 1-2s delay between AI calls
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
-        // ── STEP 2: Signal Generator ────────────────────────────────────────
-        let step2_system = Self::build_signal_generator_prompt(&step1_json, timeframe);
-        tracing::info!("Pipeline Step 2: Signal Generator ({})", self.model);
+        // ── STEP 2: Setup Classifier ──────────────────────────────────────
+        // Compute deterministic features from Step 1 analysis + market snapshot
+        let first_analysis = analyses.first();
+        let primary_symbol = first_analysis
+            .map(|a| a.symbol.clone())
+            .or_else(|| snapshot.first_symbol())
+            .unwrap_or_else(|| "UNKNOWN".into());
+
+        let features_opt = first_analysis.and_then(|analysis| {
+            Self::compute_setup_features(&primary_symbol, analysis, snapshot, timeframe)
+        });
+
+        // If features can't be computed (neutral bias or insufficient data) → NO_TRADE
+        let features = match features_opt {
+            Some(f) => f,
+            None => {
+                tracing::info!("No directional bias or insufficient data — returning NO_TRADE");
+                let analysis = first_analysis;
+                let market_bias = analysis.and_then(|a| a.market_bias.clone());
+                let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
+                let momentum = analysis.and_then(|a| a.momentum.clone());
+                let volume_profile = analysis.and_then(|a| a.volume_profile.clone());
+                let derivatives_sentiment = analysis.and_then(|a| a.derivatives_sentiment.clone());
+                let market_signals = analysis.and_then(|a| a.signals.clone());
+
+                let fallback = Prediction::new(
+                    &primary_symbol, "NO_TRADE", 0.0,
+                    "No directional bias detected — market is neutral", 0.0, 0.0, 0.0,
+                    None, None, None, None, Some(timeframe.to_string()),
+                ).with_pipeline(
+                    market_bias, None, None, None, None, None, None, None,
+                    None, None, None, None, None, None,
+                    trend_strength, momentum, volume_profile, derivatives_sentiment,
+                    Some("REJECTED".into()),
+                    market_signals,
+                    Some("No directional bias — market is neutral".into()),
+                    None, None,
+                );
+                return Ok(vec![fallback]);
+            }
+        };
+
+        let features_json = serde_json::to_string_pretty(&features)
+            .unwrap_or_else(|_| "{}".into());
+
+        let step2_system = Self::build_setup_classifier_prompt(&features_json, timeframe);
+        tracing::info!("Pipeline Step 2: Setup Classifier ({})", self.model);
         let step2_raw = self
             .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\""))
             .await?;
@@ -763,7 +949,7 @@ impl AIService {
         let step2_prefixed = format!("{{\"{}", step2_raw.trim_start_matches('{'));
         let step2_cleaned = Self::extract_first_json(&step2_prefixed);
 
-        let signals: Vec<SignalOutput> = match serde_json::from_str::<SignalOutput>(step2_cleaned) {
+        let mut signals: Vec<SignalOutput> = match serde_json::from_str::<SignalOutput>(step2_cleaned) {
             Ok(signal) => vec![signal],
             Err(e) => {
                 tracing::warn!("Step 2 parse failed ({}), retrying...", e);
@@ -776,23 +962,39 @@ impl AIService {
                     Ok(signal) => vec![signal],
                     Err(e2) => {
                         tracing::error!("Step 2 retry parse failed: {}. Returning fallback.", e2);
-                        let fallback_symbol = snapshot.first_symbol().unwrap_or_else(|| "UNKNOWN".into());
                         let fallback = Prediction::new(
-                            &fallback_symbol, "NO_TRADE", 0.0,
-                            "Signal generation unavailable", 0.0, 0.0, 0.0,
+                            &primary_symbol, "NO_TRADE", 0.0,
+                            "Setup classifier unavailable", 0.0, 0.0, 0.0,
                             None, None, None, None, Some(timeframe.to_string()),
                         ).with_pipeline(
                             None, None, None, None, None, None, None, None,
                             None, None, None, None, None, None, None, None, None, None,
                             Some("REJECTED".into()),
                             None,
-                            Some("Signal generator could not be parsed".into()),
+                            Some("Setup classifier could not be parsed".into()),
+                            None, None,
                         );
                         return Ok(vec![fallback]);
                     }
                 }
             }
         };
+
+        // Enrich classifier output with computed levels from features
+        for signal in &mut signals {
+            if signal.entry_price.is_none() {
+                signal.entry_price = Some(features.entry_price);
+            }
+            if signal.target_price.is_none() {
+                signal.target_price = Some(features.target_price);
+            }
+            if signal.stop_loss.is_none() {
+                signal.stop_loss = Some(features.stop_loss);
+            }
+            if signal.risk_reward.is_none() {
+                signal.risk_reward = Some(features.risk_reward);
+            }
+        }
 
         // Re-serialize signals as {"signals":[...]} for downstream stages 3-5
         let step2_json = serde_json::to_string(&serde_json::json!({"signals": signals}))
@@ -802,8 +1004,8 @@ impl AIService {
         // Check for NO_TRADE — skip stages 3-5, return REJECTED prediction
         let signal = &signals[0];
         if signal.decision.as_deref() == Some("NO_TRADE") {
-            tracing::info!("Signal is NO_TRADE — returning REJECTED prediction");
-            let analysis = analyses.iter().find(|a| a.symbol == signal.symbol).or_else(|| analyses.first());
+            tracing::info!("Classifier returned NO_TRADE — returning REJECTED prediction");
+            let analysis = first_analysis;
             let market_bias = analysis.and_then(|a| a.market_bias.clone());
             let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
             let momentum = analysis.and_then(|a| a.momentum.clone());
@@ -825,6 +1027,8 @@ impl AIService {
                 Some("REJECTED".into()),
                 market_signals,
                 Some("No valid trade setup identified".into()),
+                signal.confluence_score,
+                signal.issues.clone(),
             );
             return Ok(vec![prediction]);
         }
@@ -1236,6 +1440,8 @@ impl AIService {
                     prediction_status,
                     market_signals,
                     prediction_reason,
+                    signal.confluence_score,
+                    signal.issues.clone(),
                 );
 
                 tracing::info!(
@@ -1251,4 +1457,37 @@ impl AIService {
             })
             .collect()
     }
+}
+
+fn compute_rsi_for_features(closes: &[f64], period: usize) -> f64 {
+    if closes.len() <= period {
+        return 50.0;
+    }
+    let mut avg_gain = 0.0;
+    let mut avg_loss = 0.0;
+    for i in 1..=period {
+        let change = closes[i] - closes[i - 1];
+        if change > 0.0 {
+            avg_gain += change;
+        } else {
+            avg_loss += change.abs();
+        }
+    }
+    avg_gain /= period as f64;
+    avg_loss /= period as f64;
+    for i in (period + 1)..closes.len() {
+        let change = closes[i] - closes[i - 1];
+        if change > 0.0 {
+            avg_gain = (avg_gain * (period as f64 - 1.0) + change) / period as f64;
+            avg_loss = (avg_loss * (period as f64 - 1.0)) / period as f64;
+        } else {
+            avg_gain = (avg_gain * (period as f64 - 1.0)) / period as f64;
+            avg_loss = (avg_loss * (period as f64 - 1.0) + change.abs()) / period as f64;
+        }
+    }
+    if avg_loss == 0.0 {
+        return 100.0;
+    }
+    let rs = avg_gain / avg_loss;
+    100.0 - (100.0 / (1.0 + rs))
 }

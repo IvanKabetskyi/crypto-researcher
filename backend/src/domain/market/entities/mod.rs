@@ -171,6 +171,26 @@ impl DerivativesData {
             short_ratio,
         }
     }
+
+    pub fn get_symbol(&self) -> &str {
+        &self.symbol
+    }
+
+    pub fn get_funding_rate(&self) -> f64 {
+        self.funding_rate
+    }
+
+    pub fn get_long_ratio(&self) -> f64 {
+        self.long_ratio
+    }
+
+    pub fn get_short_ratio(&self) -> f64 {
+        self.short_ratio
+    }
+
+    pub fn get_orderbook_ratio(&self) -> f64 {
+        self.orderbook_ratio
+    }
 }
 
 pub struct MarketSnapshot {
@@ -197,6 +217,18 @@ impl MarketSnapshot {
 
     pub fn first_symbol(&self) -> Option<String> {
         self.tickers.first().map(|t| t.get_symbol().to_string())
+    }
+
+    pub fn get_ticker(&self, symbol: &str) -> Option<&Ticker> {
+        self.tickers.iter().find(|t| t.get_symbol() == symbol)
+    }
+
+    pub fn get_klines(&self, symbol: &str) -> Option<&Vec<Kline>> {
+        self.klines.get(symbol)
+    }
+
+    pub fn get_derivatives(&self, symbol: &str) -> Option<&DerivativesData> {
+        self.derivatives.iter().find(|d| d.get_symbol() == symbol)
     }
 
     pub fn tickers_to_json(&self) -> String {

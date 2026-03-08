@@ -34,6 +34,8 @@ interface PredictionApiResponse {
     prediction_status?: string;
     market_signals?: string[];
     prediction_reason?: string;
+    confluence_score?: number;
+    signal_issues?: string[];
 }
 
 export const transformPredictionResponse = (data: PredictionApiResponse): Prediction => ({
@@ -66,6 +68,8 @@ export const transformPredictionResponse = (data: PredictionApiResponse): Predic
     predictionStatus: data.prediction_status,
     marketSignals: data.market_signals,
     predictionReason: data.prediction_reason,
+    confluenceScore: data.confluence_score,
+    signalIssues: data.signal_issues,
 });
 
 interface HistoryApiResponse {

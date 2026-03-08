@@ -132,6 +132,18 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                             sx={{ fontSize: '0.7rem' }}
                         />
                     )}
+                    {prediction.confluenceScore != null && (
+                        <Chip
+                            label={`Confluence ${(prediction.confluenceScore * 100).toFixed(0)}%`}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                fontSize: '0.7rem',
+                                borderColor: prediction.confluenceScore >= 0.67 ? '#00e676' : prediction.confluenceScore >= 0.5 ? '#ffab00' : '#ff1744',
+                                color: prediction.confluenceScore >= 0.67 ? '#00e676' : prediction.confluenceScore >= 0.5 ? '#ffab00' : '#ff1744',
+                            }}
+                        />
+                    )}
                 </Box>
 
                 {/* Section 2: Market Summary (plain English) */}
@@ -173,6 +185,28 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                         {prediction.marketSignals.map((s, i) => (
                             <Typography key={i} variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
                                 {'\u2022'} {s}
+                            </Typography>
+                        ))}
+                    </Box>
+                )}
+
+                {/* Signal Issues */}
+                {prediction.signalIssues && prediction.signalIssues.length > 0 && (
+                    <Box
+                        sx={{
+                            mb: 1.5,
+                            p: 1.5,
+                            borderRadius: 1,
+                            backgroundColor: 'rgba(255,152,0,0.05)',
+                            border: '1px solid rgba(255,152,0,0.15)',
+                        }}
+                    >
+                        <Typography variant="caption" fontWeight={700} color="#ffa726" sx={{ mb: 0.5, display: 'block' }}>
+                            Issues
+                        </Typography>
+                        {prediction.signalIssues.map((issue, i) => (
+                            <Typography key={i} variant="body2" color="#ffa726" sx={{ lineHeight: 1.6 }}>
+                                {'\u2022'} {issue}
                             </Typography>
                         ))}
                     </Box>

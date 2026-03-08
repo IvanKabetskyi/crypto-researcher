@@ -30,4 +30,6 @@ export interface Prediction {
     predictionStatus?: string;
     marketSignals?: string[];
     predictionReason?: string;
+    confluenceScore?: number;
+    signalIssues?: string[];
 }

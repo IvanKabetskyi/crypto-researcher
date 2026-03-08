@@ -42,6 +42,8 @@ pub struct PredictionSchema {
     pub prediction_status: Option<String>,
     pub market_signals: Option<Vec<String>>,
     pub prediction_reason: Option<String>,
+    pub confluence_score: Option<f64>,
+    pub signal_issues: Option<Vec<String>>,
 }
 
 impl PredictionSchema {
@@ -80,6 +82,8 @@ impl PredictionSchema {
             prediction_status: p.get_prediction_status().map(String::from),
             market_signals: p.get_market_signals().map(|v| v.to_vec()),
             prediction_reason: p.get_prediction_reason().map(String::from),
+            confluence_score: p.get_confluence_score(),
+            signal_issues: p.get_signal_issues().map(|v| v.to_vec()),
         }
     }
 
@@ -120,6 +124,8 @@ impl PredictionSchema {
             self.prediction_status,
             self.market_signals,
             self.prediction_reason,
+            self.confluence_score,
+            self.signal_issues,
         )
     }
 }

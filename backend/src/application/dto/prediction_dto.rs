@@ -36,6 +36,8 @@ pub struct PredictionDto {
     prediction_status: Option<String>,
     market_signals: Option<Vec<String>>,
     prediction_reason: Option<String>,
+    confluence_score: Option<f64>,
+    signal_issues: Option<Vec<String>>,
 }
 
 impl PredictionDto {
@@ -73,6 +75,8 @@ impl PredictionDto {
             prediction_status: prediction.get_prediction_status().map(String::from),
             market_signals: prediction.get_market_signals().map(|v| v.to_vec()),
             prediction_reason: prediction.get_prediction_reason().map(String::from),
+            confluence_score: prediction.get_confluence_score(),
+            signal_issues: prediction.get_signal_issues().map(|v| v.to_vec()),
         }
     }
 }

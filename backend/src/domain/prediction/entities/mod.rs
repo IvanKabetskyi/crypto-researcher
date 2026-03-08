@@ -37,6 +37,8 @@ pub struct Prediction {
     prediction_status: Option<String>,
     market_signals: Option<Vec<String>>,
     prediction_reason: Option<String>,
+    confluence_score: Option<f64>,
+    signal_issues: Option<Vec<String>>,
 }
 
 impl Prediction {
@@ -89,6 +91,8 @@ impl Prediction {
             prediction_status: None,
             market_signals: None,
             prediction_reason: None,
+            confluence_score: None,
+            signal_issues: None,
         }
     }
 
@@ -115,6 +119,8 @@ impl Prediction {
         prediction_status: Option<String>,
         market_signals: Option<Vec<String>>,
         prediction_reason: Option<String>,
+        confluence_score: Option<f64>,
+        signal_issues: Option<Vec<String>>,
     ) -> Self {
         self.market_bias = market_bias;
         self.setup_type = setup_type;
@@ -137,6 +143,8 @@ impl Prediction {
         self.prediction_status = prediction_status;
         self.market_signals = market_signals;
         self.prediction_reason = prediction_reason;
+        self.confluence_score = confluence_score;
+        self.signal_issues = signal_issues;
         self
     }
 
@@ -270,5 +278,13 @@ impl Prediction {
 
     pub fn get_prediction_reason(&self) -> Option<&str> {
         self.prediction_reason.as_deref()
+    }
+
+    pub fn get_confluence_score(&self) -> Option<f64> {
+        self.confluence_score
+    }
+
+    pub fn get_signal_issues(&self) -> Option<&[String]> {
+        self.signal_issues.as_deref()
     }
 }
