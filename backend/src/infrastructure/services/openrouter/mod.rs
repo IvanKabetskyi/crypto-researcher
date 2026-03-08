@@ -64,15 +64,15 @@ struct KeyLevels {
 #[serde(rename_all = "camelCase")]
 struct SignalOutput {
     symbol: String,
-    trade_decision: Option<String>,
+    decision: Option<String>,
+    status: Option<String>,
     confidence: Option<f64>,
-    setup_type: Option<String>,
+    risk_reward: Option<f64>,
     entry_price: Option<f64>,
     target_price: Option<f64>,
-    secondary_target: Option<f64>,
     stop_loss: Option<f64>,
-    invalidation: Option<f64>,
     reasoning: Option<Vec<String>>,
+    issues: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -399,37 +399,93 @@ impl AIService {
         };
 
         format!(
-            "You are SIGNAL GENERATOR AI — Stage 2 of a multi-agent trading pipeline.\n\n\
-            You receive the MARKET ANALYZER's output (Stage 1) plus raw market data.\n\
-            Your job: decide whether there is a trade and define the setup.\n\n\
+            "You are a professional trading analysis AI inside a crypto analytics platform.\n\n\
+            Your task is NOT to predict the market.\n\
+            Your task is to determine whether a high-quality trade setup exists.\n\
+            If a strong setup does not exist, return NO_TRADE.\n\
+            Capital preservation is more important than trading frequency.\n\
+            The system will automatically parse your response as JSON.\n\
+            Therefore you must strictly follow the rules below.\n\n\
             === MARKET ANALYSIS (from Stage 1) ===\n{market_context_json}\n\n\
             TIMEFRAME: {timeframe} | TIME HORIZON: {time_horizon}\n\
             TARGETS: {target_guide}\n\n\
-            RULES:\n\
-            - Return exactly ONE JSON object for the single best setup. If no valid trade, return one object with tradeDecision=NO_TRADE.\n\
-            - If market bias is neutral or signals are mixed → set tradeDecision to \"NO_TRADE\" with low confidence\n\
-            - entry_price = current market price from the data\n\
-            - For SHORT: target BELOW entry, stop_loss ABOVE entry\n\
-            - For LONG: target ABOVE entry, stop_loss BELOW entry\n\
-            - Risk/reward must be at least 1.5:1\n\
-            - setup_type: one of BREAKOUT, MEAN_REVERSION, SQUEEZE, CONTINUATION, NO_SETUP\n\
-            - invalidation: price level where the entire thesis is wrong\n\n\
-            CONFIDENCE:\n\
-            - 30-45: uncertain/mixed signals\n\
-            - 45-60: moderate, 2-3 indicators aligned\n\
-            - 60-75: strong, most indicators aligned\n\
-            - 75-85: very strong, everything aligned\n\n\
-            OUTPUT RULES:\n\
-            - Return exactly one valid JSON object\n\
-            - No markdown, no code fences, no commentary\n\
-            - All strings must be closed, all braces balanced\n\
-            - Keep text fields under 100 characters\n\
-            - Use arrays of short strings, not long paragraphs\n\n\
-            {{\"symbol\": \"BTCUSDT\", \"tradeDecision\": \"LONG|SHORT|NO_TRADE\", \
-            \"confidence\": 0-100, \"setupType\": \"BREAKOUT|MEAN_REVERSION|SQUEEZE|CONTINUATION|NO_SETUP\", \
-            \"entryPrice\": number, \"targetPrice\": number, \"secondaryTarget\": number, \
-            \"stopLoss\": number, \"invalidation\": number, \
-            \"reasoning\": [\"factor 1\", \"factor 2\", ...]}}",
+            ---\n\
+            CORE PRINCIPLE\n\
+            Do not attempt to forecast price.\n\
+            Instead detect trade setups with statistical edge and favorable risk/reward.\n\
+            Most opportunities should result in NO_TRADE.\n\n\
+            ---\n\
+            ANALYSIS FRAMEWORK\n\
+            Evaluate the market using the following factors:\n\
+            - trend alignment\n\
+            - momentum strength\n\
+            - volume confirmation\n\
+            - liquidity sweep or stop hunt\n\
+            - support/resistance interaction\n\
+            - breakout or continuation structure\n\
+            - mean reversion conditions\n\
+            - derivatives positioning\n\
+            - volatility stability\n\n\
+            A valid trade should have at least three confirming factors.\n\
+            If fewer than three confirmations exist → NO_TRADE.\n\n\
+            ---\n\
+            RISK / REWARD RULE\n\
+            Only approve trades when: reward / risk >= 1.5\n\
+            Prefer setups with risk/reward >= 2.\n\
+            If the ratio is below 1.5 → NO_TRADE.\n\n\
+            ---\n\
+            DISTANCE RULE\n\
+            Avoid entering trades directly into strong levels.\n\
+            Reject LONG trades if: distance to resistance < 0.3%\n\
+            Reject SHORT trades if: distance to support < 0.3%\n\n\
+            ---\n\
+            VOLATILITY RULE\n\
+            Reject trades when volatility is unstable.\n\
+            Examples: sudden volume spikes, liquidation cascades, abnormal spreads, extremely large candles.\n\
+            These conditions reduce predictability.\n\n\
+            ---\n\
+            CONFLICT RULE\n\
+            If major indicators conflict, reject the trade.\n\
+            Example: bullish trend + bearish order flow + neutral momentum → WAIT_CONFIRMATION or NO_TRADE.\n\n\
+            ---\n\
+            POSITION SIZE LOGIC\n\
+            APPROVED → normal position size\n\
+            REDUCED_SIZE → smaller position due to risk factors\n\
+            WAIT_CONFIRMATION → direction possible but entry not ready\n\
+            REJECTED → do not trade\n\n\
+            ---\n\
+            CONFIDENCE RULE\n\
+            Confidence represents setup quality. Range: 0-100\n\
+            80-100: strong setup\n\
+            60-79: moderate setup\n\
+            40-59: weak setup\n\
+            below 40: reject trade\n\n\
+            ---\n\
+            OUTPUT FORMAT\n\
+            Return exactly one valid JSON object.\n\
+            Rules:\n\
+            - JSON only\n\
+            - no markdown, no code fences, no commentary outside JSON\n\
+            - do not return multiple objects or arrays at the top level\n\
+            - all strings must be closed, all braces balanced\n\
+            - reasoning must be an array of short strings\n\
+            - issues must be an array of short strings\n\n\
+            ---\n\
+            NO_TRADE RULE\n\
+            If a valid setup does not exist:\n\
+            decision = NO_TRADE, status = REJECTED\n\
+            Provide reasoning explaining why the trade was rejected.\n\n\
+            ---\n\
+            FINAL RULE\n\
+            If you are uncertain, return NO_TRADE.\n\
+            The system prefers missing a trade over taking a bad trade.\n\n\
+            OUTPUT SCHEMA:\n\
+            {{\"symbol\":\"BTCUSDT\",\"decision\":\"LONG|SHORT|NO_TRADE\",\
+            \"status\":\"APPROVED|REDUCED_SIZE|WAIT_CONFIRMATION|REJECTED\",\
+            \"confidence\":0-100,\"riskReward\":number,\
+            \"entryPrice\":number,\"targetPrice\":number,\"stopLoss\":number,\
+            \"reasoning\":[\"short explanation\",...],\
+            \"issues\":[\"risk factor\",...]}}",
             market_context_json = market_context_json,
             timeframe = timeframe,
             time_horizon = time_horizon,
@@ -745,7 +801,7 @@ impl AIService {
 
         // Check for NO_TRADE — skip stages 3-5, return REJECTED prediction
         let signal = &signals[0];
-        if signal.trade_decision.as_deref() == Some("NO_TRADE") {
+        if signal.decision.as_deref() == Some("NO_TRADE") {
             tracing::info!("Signal is NO_TRADE — returning REJECTED prediction");
             let analysis = analyses.iter().find(|a| a.symbol == signal.symbol).or_else(|| analyses.first());
             let market_bias = analysis.and_then(|a| a.market_bias.clone());
@@ -763,7 +819,7 @@ impl AIService {
                 &reasoning, 0.0, 0.0, 0.0,
                 None, None, None, None, Some(timeframe.to_string()),
             ).with_pipeline(
-                market_bias, signal.setup_type.clone(), None, None, None,
+                market_bias, None, None, signal.risk_reward, None,
                 None, None, None, None, None, None, None, None, None,
                 trend_strength, momentum, volume_profile, derivatives_sentiment,
                 Some("REJECTED".into()),
@@ -857,7 +913,7 @@ impl AIService {
             .iter()
             .filter_map(|signal| {
                 let symbol = &signal.symbol;
-                let direction = signal.trade_decision.as_deref()?;
+                let direction = signal.decision.as_deref()?;
 
                 // Skip NO_TRADE
                 if direction == "NO_TRADE" {
@@ -868,9 +924,9 @@ impl AIService {
                 let entry_price = signal.entry_price?;
                 let mut target_price = signal.target_price?;
                 let mut stop_loss = signal.stop_loss?;
-                let secondary_target = signal.secondary_target;
-                let invalidation = signal.invalidation;
-                let setup_type = signal.setup_type.clone();
+                let secondary_target: Option<f64> = None;
+                let invalidation: Option<f64> = None;
+                let setup_type: Option<String> = None;
                 let reasoning = signal.reasoning.as_ref()
                     .map(|v| v.join("\n"))
                     .unwrap_or_else(|| "No reasoning".into());
@@ -887,7 +943,7 @@ impl AIService {
                 // Get risk assessment
                 let risk = risks.iter().find(|r| r.symbol == *symbol);
                 let risk_decision = risk.and_then(|r| r.decision.clone());
-                let risk_reward_ratio = risk.and_then(|r| r.risk_reward_ratio);
+                let risk_reward_ratio = risk.and_then(|r| r.risk_reward_ratio).or(signal.risk_reward);
                 let mut position_size_pct = risk.and_then(|r| r.position_size_pct);
 
                 // Skip REJECTED trades
