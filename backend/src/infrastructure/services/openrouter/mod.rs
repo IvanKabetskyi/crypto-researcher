@@ -76,6 +76,11 @@ struct SignalOutput {
     confluence_score: Option<f64>,
 }
 
+#[derive(Deserialize, Debug)]
+struct ClassifierResponse {
+    signals: Option<Vec<SignalOutput>>,
+}
+
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct SetupFeatures {
@@ -622,7 +627,7 @@ impl AIService {
         })
     }
 
-    fn build_setup_classifier_prompt(features_json: &str, timeframe: &str) -> String {
+    fn build_setup_classifier_prompt(features_json: &str, timeframe: &str, count: usize) -> String {
         let time_horizon = match timeframe {
             "5min"  => "5-15 MINUTES",
             "30min" => "30-90 MINUTES",
@@ -633,10 +638,37 @@ impl AIService {
             _       => "1-3 candles",
         };
 
+        let output_instruction = if count == 1 {
+            "Return exactly one JSON object for the single setup provided.".to_string()
+        } else {
+            format!(
+                "You receive {} setups. Return a JSON object with a \"signals\" array \
+                containing one classification per setup, in the same order. \
+                Every setup MUST have a corresponding entry in the array.",
+                count
+            )
+        };
+
+        let output_schema = if count == 1 {
+            "{{\"symbol\":\"...\",\"decision\":\"LONG|SHORT|NO_TRADE\",\
+            \"status\":\"APPROVED|REDUCED_SIZE|ACCEPT_WITH_CAUTION|WAIT_CONFIRMATION|REJECTED\",\
+            \"confidence\":0-100,\"riskReward\":number,\
+            \"confluenceScore\":0.0-1.0,\
+            \"reasoning\":[\"factor 1\",\"factor 2\",...],\
+            \"issues\":[\"risk factor\",...]}}".to_string()
+        } else {
+            "{{\"signals\":[{{\"symbol\":\"...\",\"decision\":\"LONG|SHORT|NO_TRADE\",\
+            \"status\":\"APPROVED|REDUCED_SIZE|ACCEPT_WITH_CAUTION|WAIT_CONFIRMATION|REJECTED\",\
+            \"confidence\":0-100,\"riskReward\":number,\
+            \"confluenceScore\":0.0-1.0,\
+            \"reasoning\":[\"factor 1\",...],\
+            \"issues\":[\"risk factor\",...]}}, ...]}}".to_string()
+        };
+
         format!(
             "You are Setup Classifier AI.\n\
-            You receive PRE-COMPUTED deterministic features for a potential trade setup.\n\
-            Your job: classify the setup quality. You do NOT analyze raw market data.\n\n\
+            You receive PRE-COMPUTED deterministic features for potential trade setups.\n\
+            Your job: classify each setup's quality. You do NOT analyze raw market data.\n\n\
             === COMPUTED FEATURES ===\n{features_json}\n\n\
             TIMEFRAME: {timeframe} | HORIZON: {time_horizon}\n\n\
             ---\n\
@@ -669,20 +701,14 @@ impl AIService {
             This is a deterministic value. Compute it exactly.\n\n\
             ---\n\
             OUTPUT FORMAT:\n\
-            Return exactly one valid JSON object. No markdown, no code fences.\n\
-            All strings closed, all braces balanced.\n\
+            {output_instruction}\n\
+            No markdown, no code fences. All strings closed, all braces balanced.\n\
             reasoning and issues must be arrays of short strings.\n\n\
             OUTPUT SCHEMA:\n\
-            {{\"symbol\":\"...\",\"decision\":\"LONG|SHORT|NO_TRADE\",\
-            \"status\":\"APPROVED|REDUCED_SIZE|ACCEPT_WITH_CAUTION|WAIT_CONFIRMATION|REJECTED\",\
-            \"confidence\":0-100,\"riskReward\":{rr},\
-            \"confluenceScore\":0.0-1.0,\
-            \"reasoning\":[\"factor 1\",\"factor 2\",...],\
-            \"issues\":[\"risk factor\",...]}}",
+            {output_schema}",
             features_json = features_json,
             timeframe = timeframe,
             time_horizon = time_horizon,
-            rr = "number",
         )
     }
 
@@ -948,24 +974,22 @@ impl AIService {
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
         // ── STEP 2: Setup Classifier ──────────────────────────────────────
-        // Compute features for ALL analyzed symbols, classify the best one
+        // Compute features for ALL analyzed symbols
         let mut all_features: Vec<SetupFeatures> = Vec::new();
-        let mut no_feature_symbols: Vec<String> = Vec::new();
 
         for analysis in &analyses {
             match Self::compute_setup_features(&analysis.symbol, analysis, snapshot, timeframe) {
                 Some(f) => {
-                    tracing::info!("{}: {} confirmations, R:R {:.2}", f.symbol, f.confirmations_count, f.risk_reward);
+                    tracing::info!("{}: {} confirmations, R:R {:.2}, dir {}", f.symbol, f.confirmations_count, f.risk_reward, f.intended_direction);
                     all_features.push(f);
                 }
                 None => {
                     tracing::info!("{}: no directional signal — skipping", analysis.symbol);
-                    no_feature_symbols.push(analysis.symbol.clone());
                 }
             }
         }
 
-        // If no symbol produced features → return NO_TRADE for all
+        // If no symbol produced features → return NO_TRADE
         if all_features.is_empty() {
             tracing::info!("No symbols have directional bias — returning NO_TRADE");
             let first_analysis = analyses.first();
@@ -996,71 +1020,90 @@ impl AIService {
             return Ok(vec![fallback]);
         }
 
-        // Pick the best setup: most confirmations, then highest R:R
-        all_features.sort_by(|a, b| {
-            b.confirmations_count.cmp(&a.confirmations_count)
-                .then(b.risk_reward.partial_cmp(&a.risk_reward).unwrap_or(std::cmp::Ordering::Equal))
-        });
-        let features = all_features.remove(0);
-        tracing::info!("Best setup: {} {} with {} confirmations", features.symbol, features.intended_direction, features.confirmations_count);
+        let feature_count = all_features.len();
+        tracing::info!("Classifying {} symbols", feature_count);
 
-        let features_json = serde_json::to_string_pretty(&features)
-            .unwrap_or_else(|_| "{}".into());
+        // Build features JSON: single object for 1, array for many
+        let (features_json, prefill) = if feature_count == 1 {
+            (serde_json::to_string_pretty(&all_features[0]).unwrap_or_else(|_| "{}".into()), "{\"")
+        } else {
+            (serde_json::to_string_pretty(&all_features).unwrap_or_else(|_| "[]".into()), "{\"signals\":[")
+        };
 
-        let step2_system = Self::build_setup_classifier_prompt(&features_json, timeframe);
-        tracing::info!("Pipeline Step 2: Setup Classifier ({})", self.model);
+        let step2_system = Self::build_setup_classifier_prompt(&features_json, timeframe, feature_count);
+        tracing::info!("Pipeline Step 2: Setup Classifier ({}) for {} symbols", self.model, feature_count);
         let step2_raw = self
-            .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\""))
+            .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some(prefill))
             .await?;
 
-        // Parse as single flat object
-        let step2_prefixed = format!("{{\"{}", step2_raw.trim_start_matches('{'));
-        let step2_cleaned = Self::extract_first_json(&step2_prefixed);
-
-        let mut signals: Vec<SignalOutput> = match serde_json::from_str::<SignalOutput>(step2_cleaned) {
-            Ok(signal) => vec![signal],
-            Err(e) => {
-                tracing::warn!("Step 2 parse failed ({}), retrying...", e);
-                let retry_raw = self
-                    .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some("{\""))
-                    .await?;
-                let retry_prefixed = format!("{{\"{}", retry_raw.trim_start_matches('{'));
-                let retry_cleaned = Self::extract_first_json(&retry_prefixed);
-                match serde_json::from_str::<SignalOutput>(retry_cleaned) {
-                    Ok(signal) => vec![signal],
-                    Err(e2) => {
-                        tracing::error!("Step 2 retry parse failed: {}. Returning fallback.", e2);
-                        let fallback = Prediction::new(
-                            &features.symbol, "NO_TRADE", 0.0,
-                            "Setup classifier unavailable", 0.0, 0.0, 0.0,
-                            None, None, None, None, Some(timeframe.to_string()),
-                        ).with_pipeline(
-                            None, None, None, None, None, None, None, None,
-                            None, None, None, None, None, None, None, None, None, None,
-                            Some("REJECTED".into()),
-                            None,
-                            Some("Setup classifier could not be parsed".into()),
-                            None, None,
-                        );
-                        return Ok(vec![fallback]);
-                    }
+        // Parse response: single object or {"signals":[...]} depending on count
+        let mut signals: Vec<SignalOutput> = if feature_count == 1 {
+            let step2_prefixed = format!("{{\"{}", step2_raw.trim_start_matches('{'));
+            let step2_cleaned = Self::extract_first_json(&step2_prefixed);
+            match serde_json::from_str::<SignalOutput>(step2_cleaned) {
+                Ok(signal) => vec![signal],
+                Err(e) => {
+                    tracing::warn!("Step 2 single parse failed ({}), retrying...", e);
+                    let retry_raw = self
+                        .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some(prefill))
+                        .await?;
+                    let retry_prefixed = format!("{{\"{}", retry_raw.trim_start_matches('{'));
+                    let retry_cleaned = Self::extract_first_json(&retry_prefixed);
+                    serde_json::from_str::<SignalOutput>(retry_cleaned)
+                        .map(|s| vec![s])
+                        .unwrap_or_default()
+                }
+            }
+        } else {
+            let step2_json_str = Self::parse_json_response(&step2_raw, "signals");
+            match serde_json::from_str::<ClassifierResponse>(&step2_json_str) {
+                Ok(r) => r.signals.unwrap_or_default(),
+                Err(e) => {
+                    tracing::warn!("Step 2 array parse failed ({}), retrying...", e);
+                    let retry_raw = self
+                        .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some(prefill))
+                        .await?;
+                    let retry_json = Self::parse_json_response(&retry_raw, "signals");
+                    serde_json::from_str::<ClassifierResponse>(&retry_json)
+                        .map(|r| r.signals.unwrap_or_default())
+                        .unwrap_or_default()
                 }
             }
         };
 
+        if signals.is_empty() {
+            tracing::error!("Step 2 produced no signals. Returning fallback.");
+            let sym = all_features.first().map(|f| f.symbol.as_str()).unwrap_or("UNKNOWN");
+            let fallback = Prediction::new(
+                sym, "NO_TRADE", 0.0,
+                "Setup classifier returned empty response", 0.0, 0.0, 0.0,
+                None, None, None, None, Some(timeframe.to_string()),
+            ).with_pipeline(
+                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None, None, None,
+                Some("REJECTED".into()),
+                None,
+                Some("Setup classifier returned empty response".into()),
+                None, None,
+            );
+            return Ok(vec![fallback]);
+        }
+
         // Enrich classifier output with computed levels from features
         for signal in &mut signals {
-            if signal.entry_price.is_none() {
-                signal.entry_price = Some(features.entry_price);
-            }
-            if signal.target_price.is_none() {
-                signal.target_price = Some(features.target_price);
-            }
-            if signal.stop_loss.is_none() {
-                signal.stop_loss = Some(features.stop_loss);
-            }
-            if signal.risk_reward.is_none() {
-                signal.risk_reward = Some(features.risk_reward);
+            if let Some(feat) = all_features.iter().find(|f| f.symbol == signal.symbol) {
+                if signal.entry_price.is_none() {
+                    signal.entry_price = Some(feat.entry_price);
+                }
+                if signal.target_price.is_none() {
+                    signal.target_price = Some(feat.target_price);
+                }
+                if signal.stop_loss.is_none() {
+                    signal.stop_loss = Some(feat.stop_loss);
+                }
+                if signal.risk_reward.is_none() {
+                    signal.risk_reward = Some(feat.risk_reward);
+                }
             }
         }
 
@@ -1069,37 +1112,49 @@ impl AIService {
             .unwrap_or_else(|_| "{}".into());
         tracing::info!("Step 2 complete: {} signals, {} chars", signals.len(), step2_json.len());
 
-        // Check for NO_TRADE — skip stages 3-5, return REJECTED prediction
-        let signal = &signals[0];
-        if signal.decision.as_deref() == Some("NO_TRADE") {
-            tracing::info!("Classifier returned NO_TRADE for {} — returning REJECTED prediction", signal.symbol);
-            let analysis = analyses.iter().find(|a| a.symbol == signal.symbol).or(analyses.first());
-            let market_bias = analysis.and_then(|a| a.market_bias.clone());
-            let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
-            let momentum = analysis.and_then(|a| a.momentum.clone());
-            let volume_profile = analysis.and_then(|a| a.volume_profile.clone());
-            let derivatives_sentiment = analysis.and_then(|a| a.derivatives_sentiment.clone());
-            let market_signals = analysis.and_then(|a| a.signals.clone());
-            let reasoning = signal.reasoning.as_ref()
-                .map(|v| v.join("\n"))
-                .unwrap_or_else(|| "No valid trade setup found".into());
+        // Separate tradeable signals from NO_TRADE
+        let mut no_trade_predictions: Vec<Prediction> = Vec::new();
+        let tradeable_signals: Vec<SignalOutput> = signals.into_iter().filter(|s| {
+            if s.decision.as_deref() == Some("NO_TRADE") {
+                let analysis = analyses.iter().find(|a| a.symbol == s.symbol).or(analyses.first());
+                let market_bias = analysis.and_then(|a| a.market_bias.clone());
+                let trend_strength = analysis.and_then(|a| a.trend_strength.clone());
+                let momentum = analysis.and_then(|a| a.momentum.clone());
+                let volume_profile = analysis.and_then(|a| a.volume_profile.clone());
+                let derivatives_sentiment = analysis.and_then(|a| a.derivatives_sentiment.clone());
+                let market_signals = analysis.and_then(|a| a.signals.clone());
+                let reasoning = s.reasoning.as_ref()
+                    .map(|v| v.join("\n"))
+                    .unwrap_or_else(|| "No valid trade setup found".into());
 
-            let prediction = Prediction::new(
-                &signal.symbol, "NO_TRADE", signal.confidence.unwrap_or(0.0),
-                &reasoning, 0.0, 0.0, 0.0,
-                None, None, None, None, Some(timeframe.to_string()),
-            ).with_pipeline(
-                market_bias, None, None, signal.risk_reward, None,
-                None, None, None, None, None, None, None, None, None,
-                trend_strength, momentum, volume_profile, derivatives_sentiment,
-                Some("REJECTED".into()),
-                market_signals,
-                Some("No valid trade setup identified".into()),
-                signal.confluence_score,
-                signal.issues.clone(),
-            );
-            return Ok(vec![prediction]);
+                let pred = Prediction::new(
+                    &s.symbol, "NO_TRADE", s.confidence.unwrap_or(0.0),
+                    &reasoning, 0.0, 0.0, 0.0,
+                    None, None, None, None, Some(timeframe.to_string()),
+                ).with_pipeline(
+                    market_bias, None, None, s.risk_reward, None,
+                    None, None, None, None, None, None, None, None, None,
+                    trend_strength, momentum, volume_profile, derivatives_sentiment,
+                    Some("REJECTED".into()),
+                    market_signals,
+                    Some("No valid trade setup identified".into()),
+                    s.confluence_score,
+                    s.issues.clone(),
+                );
+                no_trade_predictions.push(pred);
+                false
+            } else {
+                true
+            }
+        }).collect();
+
+        // If all signals are NO_TRADE, return the NO_TRADE predictions
+        if tradeable_signals.is_empty() {
+            tracing::info!("All {} signals are NO_TRADE — returning REJECTED predictions", no_trade_predictions.len());
+            return Ok(no_trade_predictions);
         }
+
+        let signals = tradeable_signals;
 
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
