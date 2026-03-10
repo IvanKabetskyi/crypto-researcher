@@ -210,9 +210,9 @@ impl AIService {
         let base_url = std::env::var("AI_API_URL")
             .unwrap_or_else(|_| "https://api.anthropic.com".into());
         let model = std::env::var("AI_MODEL")
-            .unwrap_or_else(|_| "claude-opus-4-6-20250415".into());
+            .unwrap_or_else(|_| "claude-opus-4-6".into());
         let review_model = std::env::var("AI_REVIEW_MODEL")
-            .unwrap_or_else(|_| "claude-opus-4-6-20250415".into());
+            .unwrap_or_else(|_| "claude-opus-4-6".into());
         let api_key = std::env::var("AI_API_KEY")
             .unwrap_or_default();
 
