@@ -3,9 +3,9 @@ mod domain;
 mod infrastructure;
 
 use actix_cors::Cors;
-use actix_web::{App, HttpServer, middleware::from_fn, web::Data};
+use actix_web::{App, HttpServer, middleware::from_fn};
 
-use application::controller::analyze::{trigger_analysis, get_analysis_status, create_job_store};
+use application::controller::analyze::analyze_stream;
 use application::controller::auth::login;
 use application::controller::config::get_config;
 use application::controller::history::get_history;
@@ -32,8 +32,6 @@ async fn main() -> std::io::Result<()> {
             .expect("ANALYSIS_INTERVAL_SECS must be a valid u64"),
     );
 
-    let job_store = create_job_store();
-
     tracing::info!("Starting server on {}:{}", host, port);
 
     HttpServer::new(move || {
@@ -41,12 +39,10 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(cors)
             .wrap(from_fn(auth_middleware))
-            .app_data(Data::new(job_store.clone()))
             .service(login)
             .service(get_config)
             .service(get_history)
-            .service(trigger_analysis)
-            .service(get_analysis_status)
+            .service(analyze_stream)
     })
     .bind((host.as_str(), port))?
     .run()

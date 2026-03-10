@@ -5,6 +5,8 @@ import { HistoryResponse, HistoryParams } from 'types/history';
 import { AppConfig } from 'types/config';
 import { LoginParams, LoginResponse } from 'types/auth';
 
+declare const __API_URL__: string;
+
 export const authRequests = {
     login: async (params: LoginParams): Promise<LoginResponse> => {
         const response = await apiClient.post('/auth/login', params);
@@ -19,37 +21,70 @@ export const configRequests = {
     },
 };
 
-interface PollCallbacks {
+interface StreamCallbacks {
     onStage?: (stage: string) => void;
 }
-
-const pollJob = async (jobId: string, callbacks?: PollCallbacks): Promise<Prediction[]> => {
-    const maxAttempts = 150;
-    for (let i = 0; i < maxAttempts; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const res = await apiClient.get(`/analyze/${jobId}`);
-        const { status, predictions, error, stage } = res.data;
-        if (stage && callbacks?.onStage) {
-            callbacks.onStage(stage);
-        }
-        if (status === 'completed') {
-            return (predictions || []).map(transformPredictionResponse);
-        }
-        if (status === 'failed') {
-            throw new Error(error || 'Analysis failed');
-        }
-    }
-    throw new Error('Analysis timed out');
-};
 
 export const predictionRequests = {
     triggerAnalysis: async (
         params: { pairs: string[]; timeframe: string; min_confidence: number; bet_value: number },
-        callbacks?: PollCallbacks,
+        callbacks?: StreamCallbacks,
     ): Promise<Prediction[]> => {
-        const response = await apiClient.post('/analyze', params);
-        const jobId = response.data.job_id;
-        return pollJob(jobId, callbacks);
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${__API_URL__}/analyze`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify(params),
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('email');
+                window.location.href = import.meta.env.BASE_URL + 'login';
+            }
+            const text = await response.text().catch(() => response.statusText);
+            throw new Error(text || 'Analysis failed');
+        }
+
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop()!;
+
+            for (const part of parts) {
+                const trimmed = part.trim();
+                if (!trimmed || trimmed.startsWith(':')) continue;
+
+                let eventType = '';
+                let data = '';
+                for (const line of trimmed.split('\n')) {
+                    if (line.startsWith('event: ')) eventType = line.slice(7);
+                    else if (line.startsWith('data: ')) data = line.slice(6);
+                }
+
+                if (eventType === 'stage' && data) {
+                    callbacks?.onStage?.(data);
+                } else if (eventType === 'result' && data) {
+                    const predictions = JSON.parse(data);
+                    return predictions.map(transformPredictionResponse);
+                } else if (eventType === 'error' && data) {
+                    throw new Error(data);
+                }
+            }
+        }
+
+        throw new Error('Stream ended without result');
     },
 
     fetchHistory: async (params?: HistoryParams): Promise<HistoryResponse> => {

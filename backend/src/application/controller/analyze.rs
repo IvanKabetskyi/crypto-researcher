@@ -1,115 +1,71 @@
-use actix_web::{post, get, web::{Json, Path, Data}, HttpResponse};
-use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use uuid::Uuid;
+use actix_web::{post, web::{Json, Bytes}, HttpResponse};
+use tokio::sync::mpsc;
 
-use crate::application::dto::prediction_dto::PredictionDto;
 use crate::application::request_dto::analyze_params_dto::AnalyzeParams;
 use crate::application::usecases::run_analysis::run_analysis_use_case;
 
-#[derive(Clone, Serialize)]
-pub struct JobStatus {
-    pub id: String,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stage: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub predictions: Option<Vec<PredictionDto>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-pub type JobStore = Arc<RwLock<HashMap<String, JobStatus>>>;
-
-pub fn create_job_store() -> JobStore {
-    Arc::new(RwLock::new(HashMap::new()))
-}
-
 #[post("/api/analyze")]
-pub async fn trigger_analysis(
+pub async fn analyze_stream(
     body: Json<AnalyzeParams>,
-    store: Data<JobStore>,
 ) -> HttpResponse {
     let params = body.into_inner();
-    let job_id = Uuid::new_v4().to_string();
+    tracing::info!("SSE analysis started: pairs={:?}, timeframe={}", params.pairs, params.timeframe);
 
-    tracing::info!("Analysis job {} started: pairs={:?}, timeframe={}", job_id, params.pairs, params.timeframe);
+    let (tx, rx) = mpsc::unbounded_channel::<String>();
 
-    {
-        let mut jobs = store.write().await;
-        jobs.insert(job_id.clone(), JobStatus {
-            id: job_id.clone(),
-            status: "running".into(),
-            stage: Some("Starting...".into()),
-            predictions: None,
-            error: None,
-        });
-    }
-
-    let store_clone = store.get_ref().clone();
-    let jid = job_id.clone();
-
-    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-
-    // Spawn progress updater
-    let store_for_progress = store_clone.clone();
-    let jid_for_progress = jid.clone();
     tokio::spawn(async move {
-        while let Some(stage) = progress_rx.recv().await {
-            let mut jobs = store_for_progress.write().await;
-            if let Some(job) = jobs.get_mut(&jid_for_progress) {
-                job.stage = Some(stage);
+        let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
+        let tx_for_progress = tx.clone();
+        let tx_for_keepalive = tx.clone();
+
+        // Keepalive every 15s to prevent proxy/gateway timeout
+        let keepalive_task = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                if tx_for_keepalive.send(": keepalive\n\n".to_string()).is_err() {
+                    break;
+                }
             }
-        }
-    });
+        });
 
-    // Spawn analysis task
-    tokio::spawn(async move {
+        // Forward progress stages as SSE events
+        let progress_task = tokio::spawn(async move {
+            while let Some(stage) = progress_rx.recv().await {
+                let sse = format!("event: stage\ndata: {}\n\n", stage);
+                if tx_for_progress.send(sse).is_err() {
+                    break;
+                }
+            }
+        });
+
         match run_analysis_use_case(params, Some(progress_tx)).await {
             Ok(predictions) => {
-                tracing::info!("Job {} completed with {} predictions", jid, predictions.len());
-                let mut jobs = store_clone.write().await;
-                jobs.insert(jid.clone(), JobStatus {
-                    id: jid,
-                    status: "completed".into(),
-                    stage: None,
-                    predictions: Some(predictions),
-                    error: None,
-                });
+                let _ = progress_task.await;
+                keepalive_task.abort();
+                tracing::info!("SSE analysis completed with {} predictions", predictions.len());
+                let json = serde_json::to_string(&predictions).unwrap_or_default();
+                let _ = tx.send(format!("event: result\ndata: {}\n\n", json));
             }
             Err(e) => {
-                tracing::error!("Job {} failed: {}", jid, e);
-                let mut jobs = store_clone.write().await;
-                jobs.insert(jid.clone(), JobStatus {
-                    id: jid,
-                    status: "failed".into(),
-                    stage: None,
-                    predictions: None,
-                    error: Some(format!("Analysis failed: {}", e)),
-                });
+                let _ = progress_task.await;
+                keepalive_task.abort();
+                tracing::error!("SSE analysis failed: {}", e);
+                let _ = tx.send(format!("event: error\ndata: {}\n\n", e));
             }
+        }
+        // tx drops here → stream closes
+    });
+
+    let stream = futures::stream::unfold(rx, |mut rx| async {
+        match rx.recv().await {
+            Some(msg) => Some((Ok::<Bytes, actix_web::Error>(Bytes::from(msg)), rx)),
+            None => None,
         }
     });
 
-    HttpResponse::Accepted().json(serde_json::json!({
-        "job_id": job_id,
-        "status": "running"
-    }))
-}
-
-#[get("/api/analyze/{job_id}")]
-pub async fn get_analysis_status(
-    path: Path<String>,
-    store: Data<JobStore>,
-) -> HttpResponse {
-    let job_id = path.into_inner();
-    let jobs = store.read().await;
-    match jobs.get(&job_id) {
-        Some(job) => HttpResponse::Ok().json(job),
-        None => HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Job not found"
-        })),
-    }
+    HttpResponse::Ok()
+        .content_type("text/event-stream")
+        .insert_header(("Cache-Control", "no-cache"))
+        .insert_header(("Connection", "keep-alive"))
+        .streaming(stream)
 }
