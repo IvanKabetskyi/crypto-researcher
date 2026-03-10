@@ -200,6 +200,7 @@ struct ReviewResponse {
 pub struct AIService {
     base_url: String,
     model: String,
+    fast_model: String,
     review_model: String,
     api_key: String,
     client: reqwest::Client,
@@ -211,14 +212,17 @@ impl AIService {
             .unwrap_or_else(|_| "https://api.anthropic.com".into());
         let model = std::env::var("AI_MODEL")
             .unwrap_or_else(|_| "claude-opus-4-6".into());
+        let fast_model = std::env::var("AI_FAST_MODEL")
+            .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
         let review_model = std::env::var("AI_REVIEW_MODEL")
-            .unwrap_or_else(|_| "claude-opus-4-6".into());
+            .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
         let api_key = std::env::var("AI_API_KEY")
             .unwrap_or_default();
 
         Self {
             base_url,
             model,
+            fast_model,
             review_model,
             api_key,
             client: reqwest::Client::builder()
@@ -943,9 +947,9 @@ impl AIService {
 
         // ── STEP 1: Market Analyzer ─────────────────────────────────────────
         let step1_system = Self::build_market_analyzer_prompt(timeframe);
-        tracing::info!("Pipeline Step 1: Market Analyzer ({})", self.model);
+        tracing::info!("Pipeline Step 1: Market Analyzer ({})", self.fast_model);
         let step1_raw = self
-            .call_model_with_retry(&self.model, &step1_system, &user_content, 4096)
+            .call_model_with_retry(&self.fast_model, &step1_system, &user_content, 4096)
             .await?;
         let step1_json = Self::parse_json_response(&step1_raw);
         tracing::info!("Step 1 complete: {} chars", step1_json.len());
@@ -955,7 +959,7 @@ impl AIService {
             Err(e) => {
                 tracing::warn!("Step 1 parse failed ({}), retrying...", e);
                 let retry_raw = self
-                    .call_model_with_retry(&self.model, &step1_system, &user_content, 4096)
+                    .call_model_with_retry(&self.fast_model, &step1_system, &user_content, 4096)
                     .await?;
                 let retry_json = Self::parse_json_response(&retry_raw);
                 match serde_json::from_str::<AnalysisResponse>(&retry_json) {
@@ -1187,9 +1191,9 @@ impl AIService {
 
         // ── STEP 3: Risk Manager ────────────────────────────────────────────
         let step3_system = Self::build_risk_manager_prompt(&step1_json, &step2_json, timeframe, bet_value);
-        tracing::info!("Pipeline Step 3: Risk Manager ({})", self.model);
+        tracing::info!("Pipeline Step 3: Risk Manager ({})", self.fast_model);
         let step3_raw = self
-            .call_model(&self.model, &step3_system, &user_content, 3000)
+            .call_model(&self.fast_model, &step3_system, &user_content, 3000)
             .await?;
         let step3_json = Self::parse_json_response(&step3_raw);
         tracing::info!("Step 3 complete: {} chars", step3_json.len());
@@ -1205,9 +1209,9 @@ impl AIService {
 
         // ── STEP 4: Strategy Optimizer ──────────────────────────────────────
         let step4_system = Self::build_strategy_optimizer_prompt(&step1_json, &step2_json, &step3_json, timeframe, bet_value);
-        tracing::info!("Pipeline Step 4: Strategy Optimizer ({})", self.model);
+        tracing::info!("Pipeline Step 4: Strategy Optimizer ({})", self.fast_model);
         let step4_raw = self
-            .call_model(&self.model, &step4_system, &user_content, 3000)
+            .call_model(&self.fast_model, &step4_system, &user_content, 3000)
             .await?;
         let step4_json = Self::parse_json_response(&step4_raw);
         tracing::info!("Step 4 complete: {} chars", step4_json.len());
