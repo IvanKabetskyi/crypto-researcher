@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::domain::prediction::entities::Prediction;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PredictionDto {
     id: String,
     symbol: String,
