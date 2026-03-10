@@ -234,19 +234,11 @@ impl AIService {
         system: &str,
         user_content: &str,
         max_tokens: u32,
-        prefill: Option<&str>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let mut messages = vec![AnthropicMessage {
+        let messages = vec![AnthropicMessage {
             role: "user".into(),
             content: user_content.to_string(),
         }];
-
-        if let Some(prefix) = prefill {
-            messages.push(AnthropicMessage {
-                role: "assistant".into(),
-                content: prefix.to_string(),
-            });
-        }
 
         let request_body = AnthropicRequest {
             model: model.to_string(),
@@ -298,9 +290,8 @@ impl AIService {
         system: &str,
         user_content: &str,
         max_tokens: u32,
-        prefill: Option<&str>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let result = self.call_model(model, system, user_content, max_tokens, prefill).await;
+        let result = self.call_model(model, system, user_content, max_tokens).await;
         match result {
             Ok(raw) => Ok(raw),
             Err(e) => {
@@ -312,7 +303,7 @@ impl AIService {
                     All strings closed. All braces balanced.",
                     system, e
                 );
-                self.call_model(model, &repair_system, user_content, max_tokens, prefill).await
+                self.call_model(model, &repair_system, user_content, max_tokens).await
             }
         }
     }
@@ -345,7 +336,7 @@ impl AIService {
         s
     }
 
-    fn parse_json_response(raw: &str, prefill_key: &str) -> String {
+    fn parse_json_response(raw: &str) -> String {
         let cleaned = raw
             .trim()
             .trim_start_matches("```json")
@@ -353,18 +344,8 @@ impl AIService {
             .trim_end_matches("```")
             .trim();
 
-        // The assistant prefill starts with {"key":[ so the response continues from there
-        let opening = format!("{{\"{}\":", prefill_key);
-        let reconstructed = if cleaned.starts_with('{') && cleaned.contains(prefill_key) {
-            cleaned.to_string()
-        } else {
-            // AI continues after prefill e.g. {"analyses":[  — response is the array contents + closing
-            let inner = cleaned.trim_start_matches('[').trim_end_matches(']');
-            format!("{}[{}]", opening, inner)
-        };
-
         // Truncate at the end of the first complete JSON object to strip trailing text
-        Self::extract_first_json(&reconstructed).to_string()
+        Self::extract_first_json(cleaned).to_string()
     }
 
     // ── Step 1: Market Analyzer ─────────────────────────────────────────────
@@ -964,9 +945,9 @@ impl AIService {
         let step1_system = Self::build_market_analyzer_prompt(timeframe);
         tracing::info!("Pipeline Step 1: Market Analyzer ({})", self.model);
         let step1_raw = self
-            .call_model_with_retry(&self.model, &step1_system, &user_content, 4096, Some("{\"analyses\":["))
+            .call_model_with_retry(&self.model, &step1_system, &user_content, 4096)
             .await?;
-        let step1_json = Self::parse_json_response(&step1_raw, "analyses");
+        let step1_json = Self::parse_json_response(&step1_raw);
         tracing::info!("Step 1 complete: {} chars", step1_json.len());
 
         let analyses: Vec<MarketAnalysis> = match serde_json::from_str::<AnalysisResponse>(&step1_json) {
@@ -974,9 +955,9 @@ impl AIService {
             Err(e) => {
                 tracing::warn!("Step 1 parse failed ({}), retrying...", e);
                 let retry_raw = self
-                    .call_model_with_retry(&self.model, &step1_system, &user_content, 4096, Some("{\"analyses\":["))
+                    .call_model_with_retry(&self.model, &step1_system, &user_content, 4096)
                     .await?;
-                let retry_json = Self::parse_json_response(&retry_raw, "analyses");
+                let retry_json = Self::parse_json_response(&retry_raw);
                 match serde_json::from_str::<AnalysisResponse>(&retry_json) {
                     Ok(r) => r.analyses.unwrap_or_default(),
                     Err(e2) => {
@@ -1072,46 +1053,44 @@ impl AIService {
         tracing::info!("Classifying {} symbols", feature_count);
 
         // Build features JSON: single object for 1, array for many
-        let (features_json, prefill) = if feature_count == 1 {
-            (serde_json::to_string_pretty(&all_features[0]).unwrap_or_else(|_| "{}".into()), "{\"")
+        let features_json = if feature_count == 1 {
+            serde_json::to_string_pretty(&all_features[0]).unwrap_or_else(|_| "{}".into())
         } else {
-            (serde_json::to_string_pretty(&all_features).unwrap_or_else(|_| "[]".into()), "{\"signals\":[")
+            serde_json::to_string_pretty(&all_features).unwrap_or_else(|_| "[]".into())
         };
 
         let step2_system = Self::build_setup_classifier_prompt(&features_json, timeframe, feature_count);
         tracing::info!("Pipeline Step 2: Setup Classifier ({}) for {} symbols", self.model, feature_count);
         let step2_raw = self
-            .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some(prefill))
+            .call_model_with_retry(&self.model, &step2_system, &user_content, 4096)
             .await?;
 
         // Parse response: single object or {"signals":[...]} depending on count
         let mut signals: Vec<SignalOutput> = if feature_count == 1 {
-            let step2_prefixed = format!("{{\"{}", step2_raw.trim_start_matches('{'));
-            let step2_cleaned = Self::extract_first_json(&step2_prefixed);
-            match serde_json::from_str::<SignalOutput>(step2_cleaned) {
+            let step2_cleaned = Self::parse_json_response(&step2_raw);
+            match serde_json::from_str::<SignalOutput>(&step2_cleaned) {
                 Ok(signal) => vec![signal],
                 Err(e) => {
                     tracing::warn!("Step 2 single parse failed ({}), retrying...", e);
                     let retry_raw = self
-                        .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some(prefill))
+                        .call_model_with_retry(&self.model, &step2_system, &user_content, 4096)
                         .await?;
-                    let retry_prefixed = format!("{{\"{}", retry_raw.trim_start_matches('{'));
-                    let retry_cleaned = Self::extract_first_json(&retry_prefixed);
-                    serde_json::from_str::<SignalOutput>(retry_cleaned)
+                    let retry_cleaned = Self::parse_json_response(&retry_raw);
+                    serde_json::from_str::<SignalOutput>(&retry_cleaned)
                         .map(|s| vec![s])
                         .unwrap_or_default()
                 }
             }
         } else {
-            let step2_json_str = Self::parse_json_response(&step2_raw, "signals");
+            let step2_json_str = Self::parse_json_response(&step2_raw);
             match serde_json::from_str::<ClassifierResponse>(&step2_json_str) {
                 Ok(r) => r.signals.unwrap_or_default(),
                 Err(e) => {
                     tracing::warn!("Step 2 array parse failed ({}), retrying...", e);
                     let retry_raw = self
-                        .call_model_with_retry(&self.model, &step2_system, &user_content, 4096, Some(prefill))
+                        .call_model_with_retry(&self.model, &step2_system, &user_content, 4096)
                         .await?;
-                    let retry_json = Self::parse_json_response(&retry_raw, "signals");
+                    let retry_json = Self::parse_json_response(&retry_raw);
                     serde_json::from_str::<ClassifierResponse>(&retry_json)
                         .map(|r| r.signals.unwrap_or_default())
                         .unwrap_or_default()
@@ -1210,9 +1189,9 @@ impl AIService {
         let step3_system = Self::build_risk_manager_prompt(&step1_json, &step2_json, timeframe, bet_value);
         tracing::info!("Pipeline Step 3: Risk Manager ({})", self.model);
         let step3_raw = self
-            .call_model(&self.model, &step3_system, &user_content, 3000, Some("{\"assessments\":["))
+            .call_model(&self.model, &step3_system, &user_content, 3000)
             .await?;
-        let step3_json = Self::parse_json_response(&step3_raw, "assessments");
+        let step3_json = Self::parse_json_response(&step3_raw);
         tracing::info!("Step 3 complete: {} chars", step3_json.len());
 
         let risks: Vec<RiskAssessment> = serde_json::from_str::<RiskResponse>(&step3_json)
@@ -1228,9 +1207,9 @@ impl AIService {
         let step4_system = Self::build_strategy_optimizer_prompt(&step1_json, &step2_json, &step3_json, timeframe, bet_value);
         tracing::info!("Pipeline Step 4: Strategy Optimizer ({})", self.model);
         let step4_raw = self
-            .call_model(&self.model, &step4_system, &user_content, 3000, Some("{\"strategies\":["))
+            .call_model(&self.model, &step4_system, &user_content, 3000)
             .await?;
-        let step4_json = Self::parse_json_response(&step4_raw, "strategies");
+        let step4_json = Self::parse_json_response(&step4_raw);
         tracing::info!("Step 4 complete: {} chars", step4_json.len());
 
         let strategies: Vec<StrategyOutput> = serde_json::from_str::<StrategyResponse>(&step4_json)
@@ -1246,12 +1225,12 @@ impl AIService {
         let step5_system = Self::build_review_prompt(&step1_json, &step2_json, &step3_json, &step4_json);
         tracing::info!("Pipeline Step 5: Review AI ({})", self.review_model);
         let step5_result = self
-            .call_model(&self.review_model, &step5_system, &user_content, 3000, Some("{\"reviews\":["))
+            .call_model(&self.review_model, &step5_system, &user_content, 3000)
             .await;
 
         let reviews: Vec<ReviewResult> = match step5_result {
             Ok(raw) => {
-                let json = Self::parse_json_response(&raw, "reviews");
+                let json = Self::parse_json_response(&raw);
                 tracing::info!("Step 5 complete: {} chars", json.len());
                 serde_json::from_str::<ReviewResponse>(&json)
                     .map(|r| r.reviews.unwrap_or_default())
