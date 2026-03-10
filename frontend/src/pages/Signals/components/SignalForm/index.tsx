@@ -5,6 +5,7 @@ import {
     Chip,
     CircularProgress,
     FormControl,
+    FormHelperText,
     InputLabel,
     MenuItem,
     Select,
@@ -96,6 +97,11 @@ export const SignalForm: React.FC<SignalFormProps> = ({
                             </MenuItem>
                         ))}
                     </Select>
+                    {timeframe && (
+                        <FormHelperText sx={{ mx: 0, mt: 0.5, color: 'text.secondary', fontSize: '0.7rem' }}>
+                            {availableTimeframes.find((tf) => tf.value === timeframe)?.description}
+                        </FormHelperText>
+                    )}
                 </FormControl>
 
                 <TextField

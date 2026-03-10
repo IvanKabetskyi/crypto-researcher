@@ -42,6 +42,15 @@ export const derivativesText: Record<string, string> = {
     squeeze_risk: 'Squeeze risk detected in derivatives',
 };
 
+export const timeframeDescription: Record<string, string> = {
+    '5min': 'Scalping — ultra-short trades lasting 5-30 minutes',
+    '30min': 'Intraday — short-term trades lasting 1-4 hours',
+    '1h': 'Intraday swing — trades lasting 4-12 hours',
+    '6h': 'Swing — trades lasting 1-3 days',
+    '12h': 'Position — trades lasting 3-7 days',
+    '24h': 'Macro — trades lasting 1-2 weeks',
+};
+
 export const getStatusConfig = (status?: string) => {
     if (!status) return statusConfig.APPROVED;
     return statusConfig[status] || statusConfig.APPROVED;

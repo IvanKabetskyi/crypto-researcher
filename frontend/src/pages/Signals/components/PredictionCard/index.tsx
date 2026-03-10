@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, CardContent, Typography, Box, Chip, Divider, Collapse, IconButton, List, ListItem, ListItemText, Alert } from '@mui/material';
+import { Card, CardContent, Typography, Box, Chip, Divider, Collapse, IconButton, List, ListItem, ListItemText, Alert, Tooltip } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -14,6 +14,7 @@ import {
     volumeText,
     trendText,
     derivativesText,
+    timeframeDescription,
 } from '../../utils/statusHelpers';
 
 interface PredictionCardProps {
@@ -122,7 +123,9 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({ prediction }) =>
                 {/* Pipeline tags row */}
                 <Box display="flex" flexWrap="wrap" gap={0.5} mb={1.5}>
                     {prediction.timeframe && (
-                        <Chip label={prediction.timeframe} size="small" variant="outlined" />
+                        <Tooltip title={timeframeDescription[prediction.timeframe] || ''} arrow placement="top">
+                            <Chip label={prediction.timeframe} size="small" variant="outlined" />
+                        </Tooltip>
                     )}
                     {prediction.riskRewardRatio != null && (
                         <Chip
