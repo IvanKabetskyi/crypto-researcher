@@ -371,44 +371,65 @@ impl AIService {
 
     fn build_market_analyzer_prompt(timeframe: &str) -> String {
         let timeframe_guidance = match timeframe {
-            "5min" => "SCALPING context: focus on last 3 candles, volume spikes, RSI(9) extremes. Only strong setups matter.",
-            "30min" => "SWING context: SMA(7/15), last 3 candle patterns, volume confirmation needed.",
-            "1h" => "INTRADAY context: standard SMA analysis, trend following or mean reversion setups.",
-            "6h" => "POSITION context: broader trend analysis, key level identification.",
-            "12h" => "MULTI-DAY context: major trend direction, support/resistance zones.",
-            "24h" => "DAILY context: macro trend, key level analysis, news impact assessment.",
-            _ => "Standard analysis context.",
+            "5min" => "SCALPING: last 3-5 candles matter most. Focus on RSI(9) extremes (<30/>70), volume spikes (>2x avg), engulfing patterns. Ignore noise in older candles.",
+            "30min" => "SHORT-TERM SWING: SMA(7) vs SMA(15) crossover is primary trend signal. Confirm with RSI(10) and last 3 candle patterns. Volume must confirm direction.",
+            "1h" => "INTRADAY: SMA(10) vs SMA(20) for trend. RSI(14) for momentum. Check if price is extended from SMA (>1% = overextended). Support/resistance from 24h high/low.",
+            "6h" => "POSITION: broader trend from SMA(10/20). Key levels from multi-day high/low. Derivatives data weighs heavily — funding rate and open interest shifts signal big moves.",
+            "12h" => "MULTI-DAY: macro trend direction is critical. Support = lowest low across data. Resistance = highest high. Funding rate extremes (>0.01 or <-0.01) are strong signals.",
+            "24h" => "DAILY: only take trades aligned with the macro trend. News impact is relevant. Derivatives positioning (long_ratio vs short_ratio imbalance >60/40) is a strong signal.",
+            _ => "Standard analysis: use SMA crossover for trend, RSI for momentum, volume ratio for confirmation.",
         };
 
         format!(
             "You are MARKET ANALYZER AI — Stage 1 of a multi-agent trading pipeline.\n\n\
-            Your ONLY job: analyze raw market data and produce a compact JSON market context.\n\
-            You do NOT generate trade signals. You do NOT recommend actions.\n\
-            You analyze and summarize the market state objectively.\n\n\
+            TASK: Analyze raw market data and produce precise, data-driven JSON.\n\
+            You do NOT generate trade signals or recommend actions.\n\
+            You must reference ACTUAL NUMBERS from the data in your signals array.\n\n\
             Timeframe: {timeframe}\n\
             {timeframe_guidance}\n\n\
-            For EACH symbol in the data, analyze:\n\
-            1. Market bias (bullish/bearish/neutral) based on SMA trend, price position, candle patterns\n\
-            2. Trend strength (strong/moderate/weak)\n\
-            3. Key support/resistance levels from recent price action\n\
-            4. Momentum assessment (RSI, consecutive streak, exhaustion signals)\n\
-            5. Volume profile (confirming/diverging, any spikes)\n\
-            6. Derivatives sentiment (funding rate, long/short ratio, order book pressure)\n\
-            7. Brief summary of the overall market picture\n\n\
-            OUTPUT RULES:\n\
-            - Return exactly one valid JSON object\n\
-            - No markdown, no code fences, no commentary\n\
-            - All strings must be closed, all braces balanced\n\
-            - Keep text fields under 100 characters\n\
-            - Use arrays of short strings, not long paragraphs\n\n\
+            ANALYSIS RULES FOR EACH SYMBOL:\n\n\
+            1. marketBias — determine from these concrete checks:\n\
+               - SMA crossover: if sma_fast > sma_slow AND price > sma_fast → bullish\n\
+               - SMA crossover: if sma_fast < sma_slow AND price < sma_fast → bearish\n\
+               - If price is between SMAs or SMAs are flat → neutral\n\
+               - Weight RSI: >60 supports bullish, <40 supports bearish\n\
+               - Weight derivatives: long_ratio > 0.55 supports bullish, short_ratio > 0.55 supports bearish\n\
+               - If indicators conflict (e.g. bullish SMA + bearish RSI), bias is neutral\n\n\
+            2. trendStrength:\n\
+               - strong: SMA crossover + RSI confirms + volume confirms + derivatives aligned (3+ factors agree)\n\
+               - moderate: 2 factors agree\n\
+               - weak: fewer than 2 factors agree, or price is range-bound\n\n\
+            3. keyLevels — use ACTUAL numbers from the data:\n\
+               - support: the lowest low across the kline data\n\
+               - resistance: the highest high across the kline data\n\
+               - These MUST be real prices from the data, not estimates\n\n\
+            4. momentum:\n\
+               - accelerating: RSI > 55 AND rising (last 3 candles closing higher) AND momentum_5_candles positive\n\
+               - decelerating: RSI was >60 but falling, or consecutive streak breaking\n\
+               - steady: RSI between 40-60 with low volatility\n\
+               - exhausted: RSI > 70 or < 30, or exhaustion_signal is not \"none\"\n\n\
+            5. volumeProfile:\n\
+               - confirming: volume_ratio > 1.2 (recent volume higher than prior)\n\
+               - diverging: price moving up but volume_ratio < 0.8, or vice versa\n\
+               - spike: last_candle_volume_spike contains \"SPIKE\" or ratio > 2.0\n\n\
+            6. derivativesSentiment:\n\
+               - bullish: funding_rate < 0 (shorts paying longs) AND orderbook_ratio > 1.1\n\
+               - bearish: funding_rate > 0.005 AND orderbook_ratio < 0.9\n\
+               - squeeze_risk: funding_rate > 0.01 or < -0.01 with high open interest\n\
+               - neutral: otherwise\n\n\
+            7. signals: 2-5 SHORT strings (<80 chars each) citing SPECIFIC data:\n\
+               - BAD: \"bullish momentum detected\" (too vague)\n\
+               - GOOD: \"RSI(14) at 62.3, SMA(10) crossed above SMA(20), volume up 1.4x\"\n\
+               - GOOD: \"funding rate -0.008 = short squeeze risk, 63% longs\"\n\
+               - Every signal MUST include a number from the data\n\n\
+            OUTPUT: Return exactly one valid JSON object. No markdown, no code fences.\n\n\
             {{\"analyses\": [{{\"symbol\": \"BTCUSDT\", \"marketBias\": \"bullish|bearish|neutral\", \
             \"trendStrength\": \"strong|moderate|weak\", \
             \"keyLevels\": {{\"support\": number, \"resistance\": number}}, \
             \"momentum\": \"accelerating|steady|decelerating|exhausted\", \
             \"volumeProfile\": \"confirming|diverging|spike\", \
             \"derivativesSentiment\": \"bullish|bearish|neutral|squeeze_risk\", \
-            \"signals\": [\"observation under 80 chars\", ...]}}]}}\n\n\
-            signals must contain 2-5 short strings, each under 80 characters.",
+            \"signals\": [\"observation with numbers under 80 chars\", ...]}}]}}",
             timeframe = timeframe,
             timeframe_guidance = timeframe_guidance,
         )
@@ -668,42 +689,49 @@ impl AIService {
         format!(
             "You are Setup Classifier AI.\n\
             You receive PRE-COMPUTED deterministic features for potential trade setups.\n\
-            Your job: classify each setup's quality. You do NOT analyze raw market data.\n\n\
+            Your job: classify each setup's quality using ONLY the numbers provided.\n\
+            Do NOT invent data. Do NOT analyze raw market data. Use the features as-is.\n\n\
             === COMPUTED FEATURES ===\n{features_json}\n\n\
             TIMEFRAME: {timeframe} | HORIZON: {time_horizon}\n\n\
             ---\n\
-            HARD REJECTION RULES (mandatory, override everything):\n\
-            1. riskReward < 1.2 → NO_TRADE, status REJECTED\n\
-            2. confirmationsCount < 2 → NO_TRADE, status REJECTED\n\
-            3. volatilitySpike == true AND leverageRisk == true → NO_TRADE, status REJECTED\n\
-            4. liquidationRisk == true → NO_TRADE, status REJECTED\n\n\
-            If ANY hard rule triggers → immediately return NO_TRADE with the rule as the reason.\n\n\
+            STEP 1: CHECK HARD REJECTION RULES (in order, stop at first trigger):\n\
+            1. riskReward < 1.2 → NO_TRADE (cite the exact riskReward value)\n\
+            2. confirmationsCount < 2 → NO_TRADE (cite the count and list which confirmations exist)\n\
+            3. volatilitySpike == true AND leverageRisk == true → NO_TRADE\n\
+            4. liquidationRisk == true → NO_TRADE\n\n\
             ---\n\
-            CLASSIFICATION (only if no hard rule triggered):\n\n\
-            APPROVED (confidence 70-95):\n\
-            - riskReward >= 1.8\n\
-            - confirmationsCount >= 4\n\
-            - no liquidationRisk\n\n\
-            REDUCED_SIZE (confidence 50-69):\n\
-            - riskReward >= 1.5\n\
-            - confirmationsCount >= 3\n\
-            - OR leverageRisk == true\n\n\
+            STEP 2: CLASSIFY (only if no hard rule triggered):\n\n\
+            APPROVED (confidence 70-90):\n\
+            - riskReward >= 1.8 AND confirmationsCount >= 4\n\
+            - Reasoning must list each confirmation by name\n\n\
+            REDUCED_SIZE (confidence 55-69):\n\
+            - riskReward >= 1.5 AND confirmationsCount >= 3\n\
+            - OR any risk flag is true (leverageRisk)\n\n\
             ACCEPT_WITH_CAUTION (confidence 40-54):\n\
-            - confirmationsCount == 2\n\
-            - OR riskReward between 1.2 and 1.5\n\
-            - OR volatilitySpike == true (without leverageRisk)\n\n\
+            - confirmationsCount == 2 or 3 with riskReward between 1.2 and 1.5\n\
+            - OR volatilitySpike == true\n\n\
             WAIT_CONFIRMATION (confidence 30-39):\n\
-            - Setup direction is valid but timing uncertain\n\
-            - Momentum is neutral or conflicting with only 2 confirmations\n\n\
+            - Direction looks valid but momentum is \"neutral\" or \"steady\"\n\
+            - confirmationsCount == 2 with weak volume\n\n\
             ---\n\
-            CONFLUENCE SCORE:\n\
-            confluenceScore = confirmationsCount / 8.0 (capped at 1.0)\n\
-            This is a deterministic value. Compute it exactly.\n\n\
+            CONFIDENCE FORMULA (follow exactly):\n\
+            base = confirmationsCount * 12\n\
+            if riskReward >= 2.0: base += 10\n\
+            if leverageRisk: base -= 10\n\
+            if volatilitySpike: base -= 15\n\
+            confidence = clamp(base, 10, 90)\n\n\
+            ---\n\
+            confluenceScore = confirmationsCount / 8.0 (capped at 1.0). Compute exactly.\n\n\
+            ---\n\
+            REASONING RULES:\n\
+            - Each reasoning item must cite a specific feature name and its value\n\
+            - BAD: \"good risk reward\" → GOOD: \"riskReward 2.1 exceeds 1.8 threshold\"\n\
+            - BAD: \"trend is aligned\" → GOOD: \"trend_aligned + sma_crossover + volume_confirming = 3 confirmations\"\n\
+            - issues array: list each risk factor with its value\n\n\
             ---\n\
             OUTPUT FORMAT:\n\
             {output_instruction}\n\
-            No markdown, no code fences. All strings closed, all braces balanced.\n\
-            reasoning and issues must be arrays of short strings.\n\n\
+            No markdown, no code fences. All strings closed, all braces balanced.\n\n\
             OUTPUT SCHEMA:\n\
             {output_schema}",
             features_json = features_json,
@@ -717,35 +745,45 @@ impl AIService {
     fn build_risk_manager_prompt(market_json: &str, signal_json: &str, timeframe: &str, bet_value: f64) -> String {
         format!(
             "You are RISK MANAGER AI — Stage 3 of a multi-agent trading pipeline.\n\n\
-            You receive outputs from Stage 1 (Market Analyzer) and Stage 2 (Signal Generator).\n\
-            Your job: evaluate risk and decide whether to APPROVE, REDUCE_SIZE, or REJECT each trade.\n\n\
+            You receive Market Analysis (Stage 1) and Setup Classification (Stage 2).\n\
+            Your job: validate the trade's risk profile using concrete checks.\n\n\
             === MARKET ANALYSIS (Stage 1) ===\n{market_json}\n\n\
             === SIGNALS (Stage 2) ===\n{signal_json}\n\n\
             TIMEFRAME: {timeframe}\n\
-            BET VALUE: ${bet_value:.2} — this is the total capital the trader is willing to risk on this trade.\n\
-            Use this to assess whether the trade makes sense for this bet size.\n\
-            If the bet is large relative to the risk, consider REDUCE_SIZE.\n\
-            positionSizePct is the % of bet_value to actually deploy.\n\n\
-            EVALUATION CRITERIA:\n\
-            1. Is the risk/reward ratio acceptable? (minimum 1.5:1)\n\
-            2. Does the stop loss placement make sense given market structure?\n\
-            3. Is the position sizing appropriate for the volatility and bet value?\n\
-            4. Are there hidden risks (upcoming news, derivatives pressure, exhaustion)?\n\
-            5. Does the signal confidence match the market conditions?\n\n\
+            BET VALUE: ${bet_value:.2}\n\n\
+            CONCRETE RISK CHECKS (evaluate each, cite numbers):\n\n\
+            1. STOP LOSS VALIDATION:\n\
+               - For LONG: stop must be BELOW entry price\n\
+               - For SHORT: stop must be ABOVE entry price\n\
+               - Stop distance must be >= 0.05% of entry (not too tight)\n\
+               - Stop should be near a support/resistance level from Stage 1 keyLevels\n\
+               - If stop is in empty space (not near a level), note this as a risk\n\n\
+            2. TARGET VALIDATION:\n\
+               - For LONG: target must be ABOVE entry. For SHORT: target must be BELOW entry\n\
+               - Target should not exceed the next major resistance (LONG) or support (SHORT)\n\
+               - Compute actual R:R = |target - entry| / |stop - entry|. Report this number.\n\n\
+            3. DERIVATIVES RISK:\n\
+               - funding_rate > 0.005 on a LONG = crowded trade risk → REDUCE_SIZE\n\
+               - funding_rate < -0.005 on a SHORT = crowded trade risk → REDUCE_SIZE\n\
+               - long_ratio > 0.65 on a LONG = overcrowded → REDUCE_SIZE\n\
+               - squeeze_risk detected = high risk → REDUCE_SIZE or REJECT\n\n\
+            4. VOLUME RISK:\n\
+               - If volumeProfile is \"diverging\" or \"spike\" → REDUCE_SIZE\n\
+               - Low volume (volume_ratio < 0.7) means weak conviction → REDUCE_SIZE\n\n\
+            5. POSITION SIZING:\n\
+               - APPROVE + no flags: positionSizePct = 80-100\n\
+               - REDUCE_SIZE (1 risk flag): positionSizePct = 50-75\n\
+               - REDUCE_SIZE (2+ risk flags): positionSizePct = 25-50\n\
+               - REJECT: positionSizePct = 0\n\n\
             DECISIONS:\n\
-            - APPROVE: trade is sound, risk is acceptable\n\
-            - REDUCE_SIZE: trade is okay but risk warrants smaller position (set positionSizePct to 25-75)\n\
-            - REJECT: risk too high, poor setup, or conflicting signals\n\n\
-            For NO_TRADE signals, always set decision to REJECT.\n\n\
-            OUTPUT RULES:\n\
-            - Return exactly one valid JSON object\n\
-            - No markdown, no code fences, no commentary\n\
-            - All strings must be closed, all braces balanced\n\
-            - Keep text fields under 100 characters\n\
-            - Use arrays of short strings, not long paragraphs\n\n\
+            - APPROVE: all checks pass, risk is acceptable\n\
+            - REDUCE_SIZE: direction is valid but 1+ risk flags detected\n\
+            - REJECT: stop/target are invalid, R:R < 1.2, or 3+ risk flags\n\n\
+            riskNotes MUST cite specific numbers (e.g. \"R:R 1.3 below minimum 1.5\", \"funding 0.008 = crowded long\").\n\n\
+            OUTPUT: one valid JSON object, no markdown.\n\n\
             {{\"assessments\": [{{\"symbol\": \"BTCUSDT\", \"decision\": \"APPROVE|REDUCE_SIZE|REJECT\", \
             \"riskRewardRatio\": number, \"positionSizePct\": 0-100, \
-            \"riskNotes\": \"explanation of risk assessment\"}}]}}",
+            \"riskNotes\": \"specific risk assessment with numbers\"}}]}}",
             market_json = market_json,
             signal_json = signal_json,
             timeframe = timeframe,
@@ -764,35 +802,45 @@ impl AIService {
     ) -> String {
         format!(
             "You are STRATEGY OPTIMIZER AI — Stage 4 of a multi-agent trading pipeline.\n\n\
-            You receive outputs from all previous stages. Your job: produce the final optimized execution plan.\n\n\
+            You receive all previous stage outputs. Produce the final optimized execution plan.\n\n\
             === MARKET ANALYSIS (Stage 1) ===\n{market_json}\n\n\
             === SIGNALS (Stage 2) ===\n{signal_json}\n\n\
             === RISK ASSESSMENT (Stage 3) ===\n{risk_json}\n\n\
             TIMEFRAME: {timeframe}\n\
-            BET VALUE: ${bet_value:.2} — the trader's total capital for this trade.\n\
-            adjustedPositionSizePct is the % of this bet to deploy.\n\
-            For SCALE_IN: first entry should be 30-50% of bet, rest on confirmation.\n\n\
-            YOUR TASK:\n\
-            1. For REJECTED trades: set executionAction to SKIP_TRADE\n\
-            2. For APPROVED/REDUCE_SIZE trades, decide execution strategy:\n\
-               - ENTER_NOW: conditions are ideal, enter immediately\n\
-               - WAIT_CONFIRMATION: setup is good but needs one more confirmation candle\n\
-               - SCALE_IN: enter partial now, add on confirmation\n\
-               - REDUCED_SIZE: enter with smaller position due to risk\n\
-               - SKIP_TRADE: despite approval, optimizer sees a reason to skip\n\
-            3. Adjust entry/target/stop if you see a better level based on the full picture\n\
-            4. Set final position size percentage (0-100)\n\n\
-            OUTPUT RULES:\n\
-            - Return exactly one valid JSON object\n\
-            - No markdown, no code fences, no commentary\n\
-            - All strings must be closed, all braces balanced\n\
-            - Keep text fields under 100 characters\n\
-            - Use arrays of short strings, not long paragraphs\n\n\
+            BET VALUE: ${bet_value:.2}\n\n\
+            OPTIMIZATION RULES:\n\n\
+            1. ENTRY ADJUSTMENT:\n\
+               - If current price is far from support (LONG) or resistance (SHORT), \
+            consider waiting for a pullback → WAIT_CONFIRMATION\n\
+               - If price is AT a key level → ENTER_NOW is appropriate\n\
+               - adjustedEntry should be the CURRENT price from Stage 1 data unless you have a reason to change it\n\
+               - Never adjust entry more than 0.5% from the signal's entry price\n\n\
+            2. TARGET ADJUSTMENT:\n\
+               - Target should not exceed keyLevels.resistance (LONG) or keyLevels.support (SHORT)\n\
+               - If signal target exceeds the next key level, pull it back to that level\n\
+               - Do not make targets more aggressive than the signal\n\n\
+            3. STOP ADJUSTMENT:\n\
+               - Move stop to just beyond the nearest support (LONG) or resistance (SHORT)\n\
+               - Never widen stop more than 0.3% beyond the signal's stop\n\
+               - Tighter stop is acceptable if there's a clear level nearby\n\n\
+            4. EXECUTION ACTION LOGIC:\n\
+               - ENTER_NOW: momentum is \"accelerating\", volume \"confirming\", no risk flags\n\
+               - WAIT_CONFIRMATION: momentum \"steady\" or \"neutral\", or volume not confirming\n\
+               - SCALE_IN: trade looks good but some uncertainty — enter 40% now, 60% on confirmation\n\
+               - REDUCED_SIZE: risk manager said REDUCE_SIZE, or 1+ issues flagged\n\
+               - SKIP_TRADE: risk manager REJECTED, or you detect a fatal flaw\n\n\
+            5. POSITION SIZING:\n\
+               - Respect the risk manager's positionSizePct as a ceiling\n\
+               - ENTER_NOW: use risk manager's size\n\
+               - SCALE_IN: use 40-50% of risk manager's size for first entry\n\
+               - REDUCED_SIZE: use 50-70% of risk manager's size\n\n\
+            executionNotes MUST explain WHY this action (cite data from previous stages).\n\n\
+            OUTPUT: one valid JSON object, no markdown.\n\n\
             {{\"strategies\": [{{\"symbol\": \"BTCUSDT\", \
             \"executionAction\": \"ENTER_NOW|WAIT_CONFIRMATION|SCALE_IN|REDUCED_SIZE|SKIP_TRADE\", \
             \"adjustedEntry\": number, \"adjustedTarget\": number, \"adjustedStop\": number, \
             \"adjustedPositionSizePct\": 0-100, \
-            \"executionNotes\": \"why this execution approach\"}}]}}",
+            \"executionNotes\": \"specific reasoning with data references\"}}]}}",
             market_json = market_json,
             signal_json = signal_json,
             risk_json = risk_json,
