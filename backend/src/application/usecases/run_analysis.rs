@@ -5,6 +5,7 @@ use crate::infrastructure::repositories::prediction::PredictionRepository;
 use crate::infrastructure::services::bybit::BybitService;
 use crate::infrastructure::services::news::CryptoRssService;
 use crate::infrastructure::services::openrouter::AIService;
+use tokio::sync::mpsc;
 
 fn map_timeframe_to_interval(timeframe: &str) -> &str {
     match timeframe {
@@ -20,12 +21,20 @@ fn map_timeframe_to_interval(timeframe: &str) -> &str {
 
 pub async fn run_analysis_use_case(
     params: AnalyzeParams,
+    progress_tx: Option<mpsc::UnboundedSender<String>>,
 ) -> Result<Vec<PredictionDto>, String> {
     let symbols = params.pairs;
     let timeframe = &params.timeframe;
     let min_confidence = params.min_confidence;
     let kline_interval = map_timeframe_to_interval(timeframe);
 
+    let send_progress = |stage: &str| {
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send(stage.to_string());
+        }
+    };
+
+    send_progress("Fetching market data...");
     tracing::info!("Starting analysis for pairs: {:?}, timeframe: {}", symbols, timeframe);
 
     let bybit_service = BybitService::new();
@@ -47,8 +56,8 @@ pub async fn run_analysis_use_case(
     let mut klines = std::collections::HashMap::new();
     for symbol in &symbols {
         let kline_limit = match timeframe.as_str() {
-            "5min" => 80,  // ~6.5 hours, enough for fast SMA 5/13 + RSI 9
-            "30min" => 60, // ~30 hours
+            "5min" => 80,
+            "30min" => 60,
             "1h" => 48,
             "6h" => 28,
             "12h" => 20,
@@ -79,7 +88,7 @@ pub async fn run_analysis_use_case(
         }
     };
 
-    // Fetch derivatives data (order book, funding rate, open interest, long/short ratio)
+    // Fetch derivatives data
     let mut derivatives = Vec::new();
     for symbol in &symbols {
         match bybit_service.fetch_derivatives_data(symbol).await {
@@ -95,9 +104,11 @@ pub async fn run_analysis_use_case(
 
     let snapshot = MarketSnapshot::new(tickers, klines, news, derivatives);
 
+    send_progress("Stage 1/5: Analyzing market conditions...");
+
     // Call AI for analysis
     let raw_predictions = ai_service
-        .analyze(&snapshot, timeframe, params.bet_value)
+        .analyze_with_progress(&snapshot, timeframe, params.bet_value, &progress_tx)
         .await
         .map_err(|e| format!("AI analysis failed: {}", e))?;
 
@@ -115,6 +126,8 @@ pub async fn run_analysis_use_case(
         filtered.len(),
         raw_predictions.len()
     );
+
+    send_progress("Saving results...");
 
     // Save to MongoDB and collect DTOs
     let prediction_repository = PredictionRepository::new().await;

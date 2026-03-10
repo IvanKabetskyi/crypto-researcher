@@ -12,7 +12,9 @@ use crate::application::usecases::run_analysis::run_analysis_use_case;
 #[derive(Clone, Serialize)]
 pub struct JobStatus {
     pub id: String,
-    pub status: String, // "running", "completed", "failed"
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub predictions: Option<Vec<PredictionDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,28 +37,44 @@ pub async fn trigger_analysis(
 
     tracing::info!("Analysis job {} started: pairs={:?}, timeframe={}", job_id, params.pairs, params.timeframe);
 
-    // Insert running job
     {
         let mut jobs = store.write().await;
         jobs.insert(job_id.clone(), JobStatus {
             id: job_id.clone(),
             status: "running".into(),
+            stage: Some("Starting...".into()),
             predictions: None,
             error: None,
         });
     }
 
-    // Spawn background task
     let store_clone = store.get_ref().clone();
     let jid = job_id.clone();
+
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    // Spawn progress updater
+    let store_for_progress = store_clone.clone();
+    let jid_for_progress = jid.clone();
     tokio::spawn(async move {
-        match run_analysis_use_case(params).await {
+        while let Some(stage) = progress_rx.recv().await {
+            let mut jobs = store_for_progress.write().await;
+            if let Some(job) = jobs.get_mut(&jid_for_progress) {
+                job.stage = Some(stage);
+            }
+        }
+    });
+
+    // Spawn analysis task
+    tokio::spawn(async move {
+        match run_analysis_use_case(params, Some(progress_tx)).await {
             Ok(predictions) => {
                 tracing::info!("Job {} completed with {} predictions", jid, predictions.len());
                 let mut jobs = store_clone.write().await;
                 jobs.insert(jid.clone(), JobStatus {
                     id: jid,
                     status: "completed".into(),
+                    stage: None,
                     predictions: Some(predictions),
                     error: None,
                 });
@@ -67,6 +85,7 @@ pub async fn trigger_analysis(
                 jobs.insert(jid.clone(), JobStatus {
                     id: jid,
                     status: "failed".into(),
+                    stage: None,
                     predictions: None,
                     error: Some(format!("Analysis failed: {}", e)),
                 });

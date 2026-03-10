@@ -8,16 +8,19 @@ interface RunAnalysisParams {
     timeframe: string;
     min_confidence: number;
     bet_value: number;
+    onStage?: (stage: string) => void;
 }
 
 export const runAnalysis = createAsyncThunk<Prediction[], RunAnalysisParams>(
     'signals/runAnalysis',
     async (params, { rejectWithValue }) => {
         try {
-            return await predictionRequests.triggerAnalysis(params);
+            const { onStage, ...apiParams } = params;
+            return await predictionRequests.triggerAnalysis(apiParams, { onStage });
         } catch (err: unknown) {
-            const axiosErr = err as { response?: { data?: { error?: string } } };
-            const message = axiosErr?.response?.data?.error || 'Analysis failed';
+            const message = (err as Error)?.message
+                || (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+                || 'Analysis failed';
             return rejectWithValue(message);
         }
     },

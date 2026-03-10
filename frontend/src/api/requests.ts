@@ -19,12 +19,19 @@ export const configRequests = {
     },
 };
 
-const pollJob = async (jobId: string): Promise<Prediction[]> => {
-    const maxAttempts = 120; // 5 minutes max (120 * 2.5s)
+interface PollCallbacks {
+    onStage?: (stage: string) => void;
+}
+
+const pollJob = async (jobId: string, callbacks?: PollCallbacks): Promise<Prediction[]> => {
+    const maxAttempts = 150;
     for (let i = 0; i < maxAttempts; i++) {
-        await new Promise((r) => setTimeout(r, 2500));
+        await new Promise((r) => setTimeout(r, 2000));
         const res = await apiClient.get(`/analyze/${jobId}`);
-        const { status, predictions, error } = res.data;
+        const { status, predictions, error, stage } = res.data;
+        if (stage && callbacks?.onStage) {
+            callbacks.onStage(stage);
+        }
         if (status === 'completed') {
             return (predictions || []).map(transformPredictionResponse);
         }
@@ -36,15 +43,13 @@ const pollJob = async (jobId: string): Promise<Prediction[]> => {
 };
 
 export const predictionRequests = {
-    triggerAnalysis: async (params: {
-        pairs: string[];
-        timeframe: string;
-        min_confidence: number;
-        bet_value: number;
-    }): Promise<Prediction[]> => {
+    triggerAnalysis: async (
+        params: { pairs: string[]; timeframe: string; min_confidence: number; bet_value: number },
+        callbacks?: PollCallbacks,
+    ): Promise<Prediction[]> => {
         const response = await apiClient.post('/analyze', params);
         const jobId = response.data.job_id;
-        return pollJob(jobId);
+        return pollJob(jobId, callbacks);
     },
 
     fetchHistory: async (params?: HistoryParams): Promise<HistoryResponse> => {

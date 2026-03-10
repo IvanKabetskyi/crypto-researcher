@@ -29,7 +29,7 @@ pub fn start_scheduler(interval_secs: u64) {
                 min_confidence: 30.0,
                 bet_value,
             };
-            if let Err(e) = run_analysis_use_case(params).await {
+            if let Err(e) = run_analysis_use_case(params, None).await {
                 tracing::error!("Scheduled analysis failed: {}", e);
             }
 

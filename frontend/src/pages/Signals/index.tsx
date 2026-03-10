@@ -1,43 +1,27 @@
-import { useEffect, useState, useRef } from 'react';
-import { Box, Typography, Grid, CircularProgress, Alert, Snackbar, LinearProgress } from '@mui/material';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { Box, Typography, Grid, CircularProgress, Alert, Snackbar, LinearProgress, Chip } from '@mui/material';
 import { useSignalsActions } from './hooks/useSignalsActions';
 import { useStateSignals } from './hooks/useStateSignals';
 import { PredictionCard } from './components/PredictionCard';
 import { SignalForm } from './components/SignalForm';
 
-const PIPELINE_STAGES = [
-    'Fetching market data...',
-    'Stage 1: Analyzing market conditions...',
-    'Stage 2: Classifying setups (Opus)...',
-    'Stage 3: Assessing risk...',
-    'Stage 4: Optimizing strategy...',
-    'Stage 5: Final review...',
-    'Saving results...',
-];
-
 export const Signals = () => {
     const { runAnalysis, fetchConfig } = useSignalsActions();
     const { predictions, analyzing, error, availablePairs, availableTimeframes, configLoaded } = useStateSignals();
     const [elapsed, setElapsed] = useState(0);
-    const [stageIndex, setStageIndex] = useState(0);
+    const [currentStage, setCurrentStage] = useState('Starting...');
+    const [completedStages, setCompletedStages] = useState<string[]>([]);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const lastStageRef = useRef('');
 
     useEffect(() => {
         if (analyzing) {
             setElapsed(0);
-            setStageIndex(0);
+            setCurrentStage('Starting...');
+            setCompletedStages([]);
+            lastStageRef.current = '';
             timerRef.current = setInterval(() => {
-                setElapsed((prev) => {
-                    const next = prev + 1;
-                    // Estimate stage based on elapsed time
-                    if (next >= 90) setStageIndex(6);
-                    else if (next >= 70) setStageIndex(5);
-                    else if (next >= 50) setStageIndex(4);
-                    else if (next >= 35) setStageIndex(3);
-                    else if (next >= 15) setStageIndex(2);
-                    else if (next >= 5) setStageIndex(1);
-                    return next;
-                });
+                setElapsed((prev) => prev + 1);
             }, 1000);
         } else {
             if (timerRef.current) {
@@ -50,11 +34,22 @@ export const Signals = () => {
         };
     }, [analyzing]);
 
+    const handleStageUpdate = useCallback((stage: string) => {
+        if (stage !== lastStageRef.current) {
+            if (lastStageRef.current) {
+                setCompletedStages((prev) => [...prev, lastStageRef.current]);
+            }
+            lastStageRef.current = stage;
+            setCurrentStage(stage);
+        }
+    }, []);
+
     useEffect(() => {
         if (!configLoaded) {
             fetchConfig();
         }
     }, [configLoaded]);
+
     const [directionFilter, setDirectionFilter] = useState('all');
     const [snackbar, setSnackbar] = useState<{
         open: boolean;
@@ -73,21 +68,11 @@ export const Signals = () => {
         bet_value: number;
     }) => {
         try {
-            await runAnalysis(params).unwrap();
-            setSnackbar({
-                open: true,
-                message: 'Analysis complete!',
-                severity: 'success',
-            });
+            await runAnalysis({ ...params, onStage: handleStageUpdate }).unwrap();
+            setSnackbar({ open: true, message: 'Analysis complete!', severity: 'success' });
         } catch (err: unknown) {
-            const msg = (err as { message?: string })?.message
-                || String(err)
-                || 'Analysis failed';
-            setSnackbar({
-                open: true,
-                message: msg,
-                severity: 'error',
-            });
+            const msg = (err as { message?: string })?.message || String(err) || 'Analysis failed';
+            setSnackbar({ open: true, message: msg, severity: 'error' });
         }
     };
 
@@ -96,9 +81,16 @@ export const Signals = () => {
             ? predictions
             : predictions.filter((p) => p.direction === directionFilter);
 
+    // Estimate progress from stage number
+    const stageMatch = currentStage.match(/Stage (\d)\/5/);
+    const stageNum = stageMatch ? parseInt(stageMatch[1]) : 0;
+    const progress = analyzing
+        ? Math.min(((stageNum > 0 ? (stageNum - 1) * 20 : 0) + Math.min(elapsed % 60, 18)), 95)
+        : 0;
+
     return (
         <Box sx={{ p: 3 }}>
-            <Typography variant="h4" mb={3}>
+            <Typography variant="h5" mb={2} fontWeight={700}>
                 Signals
             </Typography>
 
@@ -117,27 +109,49 @@ export const Signals = () => {
                 </Alert>
             )}
 
-            {analyzing && predictions.length === 0 ? (
-                <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight={300} gap={2}>
-                    <CircularProgress color="primary" />
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                        {PIPELINE_STAGES[stageIndex]}
-                    </Typography>
-                    <Box sx={{ width: '60%', maxWidth: 400 }}>
+            {analyzing ? (
+                <Box sx={{ mt: 2 }}>
+                    {/* Progress bar */}
+                    <Box sx={{ mb: 2 }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
+                            <Typography variant="body2" fontWeight={600} color="primary">
+                                {currentStage}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {elapsed}s
+                            </Typography>
+                        </Box>
                         <LinearProgress
                             variant="determinate"
-                            value={Math.min((elapsed / 120) * 100, 95)}
-                            sx={{ height: 6, borderRadius: 3 }}
+                            value={progress}
+                            sx={{ height: 4, borderRadius: 2 }}
                         />
                     </Box>
-                    <Typography variant="caption" color="text.secondary">
-                        {elapsed}s elapsed
-                    </Typography>
+
+                    {/* Completed stages */}
+                    {completedStages.length > 0 && (
+                        <Box display="flex" gap={0.5} flexWrap="wrap" mb={2}>
+                            {completedStages.map((s, i) => (
+                                <Chip
+                                    key={i}
+                                    label={s}
+                                    size="small"
+                                    color="success"
+                                    variant="outlined"
+                                    sx={{ fontSize: '0.7rem' }}
+                                />
+                            ))}
+                        </Box>
+                    )}
+
+                    <Box display="flex" justifyContent="center" mt={4}>
+                        <CircularProgress size={32} />
+                    </Box>
                 </Box>
             ) : filteredPredictions.length === 0 ? (
-                <Box display="flex" justifyContent="center" alignItems="center" minHeight={300}>
+                <Box display="flex" justifyContent="center" alignItems="center" minHeight={200}>
                     <Typography color="text.secondary" textAlign="center">
-                        No predictions yet. Select pairs and timeframe, then click "Run Analysis".
+                        No predictions yet. Select pairs and timeframe, then click "Analyze".
                     </Typography>
                 </Box>
             ) : (

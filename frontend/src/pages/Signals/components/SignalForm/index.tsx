@@ -5,13 +5,12 @@ import {
     Chip,
     CircularProgress,
     FormControl,
-    FormHelperText,
     InputLabel,
     MenuItem,
     Select,
     TextField,
-    Typography,
     Paper,
+    Tooltip,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Timeframe } from 'types/config';
@@ -63,80 +62,70 @@ export const SignalForm: React.FC<SignalFormProps> = ({
         });
     };
 
+    const selectedTf = availableTimeframes.find((tf) => tf.value === timeframe);
+
     return (
-        <Paper sx={{ p: 2.5, mb: 3, backgroundColor: 'background.paper' }}>
-            <Box mb={2}>
-                <Typography variant="subtitle2" color="text.secondary" mb={1}>
-                    Trading Pairs
-                </Typography>
-                <Box display="flex" gap={1} flexWrap="wrap">
-                    {availablePairs.map((pair) => (
-                        <Chip
-                            key={pair}
-                            label={pair}
-                            onClick={() => togglePair(pair)}
-                            color={selectedPairs.includes(pair) ? 'primary' : 'default'}
-                            variant={selectedPairs.includes(pair) ? 'filled' : 'outlined'}
-                            sx={{ fontWeight: 600 }}
-                        />
-                    ))}
-                </Box>
-            </Box>
+        <Paper sx={{ p: 1.5, mb: 2, backgroundColor: 'background.paper' }}>
+            <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+                {availablePairs.map((pair) => (
+                    <Chip
+                        key={pair}
+                        label={pair}
+                        onClick={() => togglePair(pair)}
+                        color={selectedPairs.includes(pair) ? 'primary' : 'default'}
+                        variant={selectedPairs.includes(pair) ? 'filled' : 'outlined'}
+                        size="small"
+                        sx={{ fontWeight: 600 }}
+                    />
+                ))}
 
-            <Box display="flex" gap={2} flexWrap="wrap" alignItems="center">
-                <FormControl size="small" sx={{ minWidth: 120 }}>
-                    <InputLabel>Timeframe</InputLabel>
-                    <Select
-                        value={timeframe}
-                        label="Timeframe"
-                        onChange={(e) => setTimeframe(e.target.value)}
-                    >
-                        {availableTimeframes.map((tf) => (
-                            <MenuItem key={tf.value} value={tf.value}>
-                                {tf.label}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                    {timeframe && (
-                        <FormHelperText sx={{ mx: 0, mt: 0.5, color: 'text.secondary', fontSize: '0.7rem' }}>
-                            {availableTimeframes.find((tf) => tf.value === timeframe)?.description}
-                        </FormHelperText>
-                    )}
-                </FormControl>
+                <Box sx={{ mx: 0.5, borderLeft: '1px solid rgba(255,255,255,0.1)', height: 28 }} />
+
+                <Tooltip title={selectedTf?.description || ''} arrow placement="top">
+                    <FormControl size="small" sx={{ minWidth: 90 }}>
+                        <InputLabel>TF</InputLabel>
+                        <Select
+                            value={timeframe}
+                            label="TF"
+                            onChange={(e) => setTimeframe(e.target.value)}
+                            sx={{ fontSize: '0.85rem' }}
+                        >
+                            {availableTimeframes.map((tf) => (
+                                <MenuItem key={tf.value} value={tf.value}>
+                                    {tf.label}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Tooltip>
 
                 <TextField
                     size="small"
                     type="number"
-                    label="Bet Value ($)"
+                    label="Bet $"
                     value={betValue}
-                    onChange={(e) => {
-                        const val = Math.max(1, Number(e.target.value));
-                        setBetValue(val);
-                    }}
+                    onChange={(e) => setBetValue(Math.max(1, Number(e.target.value)))}
                     inputProps={{ min: 1, step: 10 }}
-                    required
-                    sx={{ width: 140 }}
+                    sx={{ width: 90 }}
                 />
 
                 <TextField
                     size="small"
                     type="number"
-                    label="Min Confidence"
+                    label="Min %"
                     value={minConfidence}
-                    onChange={(e) => {
-                        const val = Math.max(0, Math.min(100, Number(e.target.value)));
-                        setMinConfidence(val);
-                    }}
+                    onChange={(e) => setMinConfidence(Math.max(0, Math.min(100, Number(e.target.value))))}
                     inputProps={{ min: 0, max: 100 }}
-                    sx={{ width: 140 }}
+                    sx={{ width: 80 }}
                 />
 
-                <FormControl size="small" sx={{ minWidth: 120 }}>
-                    <InputLabel>Direction</InputLabel>
+                <FormControl size="small" sx={{ minWidth: 90 }}>
+                    <InputLabel>Dir</InputLabel>
                     <Select
                         value={directionFilter}
-                        label="Direction"
+                        label="Dir"
                         onChange={(e) => onDirectionFilterChange(e.target.value)}
+                        sx={{ fontSize: '0.85rem' }}
                     >
                         <MenuItem value="all">All</MenuItem>
                         <MenuItem value="long">Long</MenuItem>
@@ -148,16 +137,16 @@ export const SignalForm: React.FC<SignalFormProps> = ({
                     variant="contained"
                     startIcon={
                         analyzing ? (
-                            <CircularProgress size={18} color="inherit" />
+                            <CircularProgress size={16} color="inherit" />
                         ) : (
                             <PlayArrowIcon />
                         )
                     }
                     onClick={handleSubmit}
                     disabled={analyzing || selectedPairs.length === 0}
-                    sx={{ fontWeight: 700, height: 40 }}
+                    sx={{ fontWeight: 700, height: 36, minWidth: 120, fontSize: '0.85rem' }}
                 >
-                    {analyzing ? 'Analyzing...' : 'Run Analysis'}
+                    {analyzing ? 'Running...' : 'Analyze'}
                 </Button>
             </Box>
         </Paper>
