@@ -5,8 +5,8 @@ describe('Signals Page', () => {
     });
 
     it('shows the signal form', () => {
-        cy.contains('Trading Pairs').should('be.visible');
-        cy.contains('Run Analysis').should('be.visible');
+        cy.contains('Analyze').should('be.visible');
+        cy.contains('Signals').should('be.visible');
     });
 
     it('shows trading pair chips', () => {
@@ -15,7 +15,7 @@ describe('Signals Page', () => {
     });
 
     it('shows timeframe selector', () => {
-        cy.contains('Timeframe').should('be.visible');
+        cy.contains('TF').should('be.visible');
     });
 
     it('shows empty state message', () => {
